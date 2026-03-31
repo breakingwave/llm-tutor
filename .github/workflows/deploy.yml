@@ -48,5 +48,5 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
           script: |
-            cd /root/llm_tutor
+            cd /root/llm-tutor
             bash deploy/deploy.sh
