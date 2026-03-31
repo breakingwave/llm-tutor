@@ -6,6 +6,7 @@ app:
 auth:
   jwt_expire_hours: 72
   max_upload_bytes_per_user: 1073741824
+  allow_self_registration: false
 
 qdrant:
   mode: "memory"

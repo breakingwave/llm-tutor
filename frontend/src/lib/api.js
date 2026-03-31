@@ -27,7 +27,6 @@ export async function api(path, options = {}) {
 }
 
 // Auth
-export const register = (email, password) => api('/api/auth/register', { method: 'POST', body: { email, password } });
 export const login = (email, password) => api('/api/auth/login', { method: 'POST', body: { email, password } });
 export const getMe = () => api('/api/auth/me');
 
@@ -66,3 +65,8 @@ export const listOpenStaxBooks = () => api('/api/openstax/books');
 export const uploadOpenStaxBook = (formData) => api('/api/openstax/upload', { method: 'POST', body: formData });
 export const deleteOpenStaxBook = (bookId) => api(`/api/openstax/books/${bookId}`, { method: 'DELETE' });
 export const reindexOpenStaxBook = (bookId) => api(`/api/openstax/books/${bookId}/reindex`, { method: 'POST' });
+
+// Admin users
+export const listUsers = () => api('/api/admin/users');
+export const createUser = (data) => api('/api/admin/users', { method: 'POST', body: data });
+export const deleteUser = (userId) => api(`/api/admin/users/${userId}`, { method: 'DELETE' });

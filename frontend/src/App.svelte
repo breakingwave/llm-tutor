@@ -6,6 +6,7 @@
   import Dashboard from './components/Dashboard.svelte';
   import Library from './components/Library.svelte';
   import OpenStaxBrowser from './components/OpenStaxBrowser.svelte';
+  import AdminUsers from './components/AdminUsers.svelte';
 
   function authGuard() {
     if (!localStorage.getItem('token')) {
@@ -21,6 +22,7 @@
     '/dashboard/:sessionId': wrap({ component: Dashboard, conditions: [authGuard] }),
     '/library/:sessionId': wrap({ component: Library, conditions: [authGuard] }),
     '/openstax': wrap({ component: OpenStaxBrowser, conditions: [authGuard] }),
+    '/admin/users': wrap({ component: AdminUsers, conditions: [authGuard] }),
   };
 </script>
 
