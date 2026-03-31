@@ -75,3 +75,11 @@ class SessionStore:
 
     def list_sessions(self) -> list[str]:
         return [p.stem for p in self.sessions_dir.glob("*.json")]
+
+    def delete(self, session_id: str) -> bool:
+        self._cache.pop(session_id, None)
+        path = self._file_path(session_id)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True

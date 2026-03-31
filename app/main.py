@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import EnvSettings, load_settings
 from app.routers.auth import router as auth_router
+from app.routers.admin_users import router as admin_users_router
 from app.routers.pages import router as pages_router
 from app.routers.openstax import router as openstax_router
 from app.modules.dialogue.router import router as dialogue_router
@@ -61,6 +62,7 @@ async def health_check():
 
 # Register API routers
 app.include_router(auth_router)
+app.include_router(admin_users_router)
 app.include_router(pages_router)
 app.include_router(openstax_router)
 app.include_router(dialogue_router)

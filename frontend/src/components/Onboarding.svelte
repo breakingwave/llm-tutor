@@ -46,6 +46,9 @@
     {#if $currentUser}
       <span class="text-sm text-base-content/60">{$currentUser.email}</span>
     {/if}
+    {#if $currentUser?.role === 'admin'}
+      <a href="#/admin/users" class="btn btn-ghost btn-sm">Admin Users</a>
+    {/if}
     <a href="#/openstax" class="btn btn-ghost btn-sm">OpenStax Library</a>
     <button class="btn btn-ghost btn-sm" onclick={logout}>Logout</button>
   </div>

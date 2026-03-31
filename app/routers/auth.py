@@ -4,7 +4,8 @@ from pydantic import BaseModel, EmailStr
 from app.models.account import UserAccount
 from app.services.auth import AuthService
 from app.services.user_store import UserStore
-from app.dependencies import get_auth_service, get_user_store, get_current_user
+from app.config import Settings
+from app.dependencies import get_auth_service, get_user_store, get_current_user, get_settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -19,7 +20,11 @@ async def register(
     form: AuthForm,
     auth: AuthService = Depends(get_auth_service),
     store: UserStore = Depends(get_user_store),
+    settings: Settings = Depends(get_settings),
 ):
+    if not settings.auth.allow_self_registration:
+        raise HTTPException(status_code=403, detail="Self-registration is disabled")
+
     if store.get_by_email(form.email):
         raise HTTPException(status_code=409, detail="Email already registered")
 

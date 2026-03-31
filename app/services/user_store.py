@@ -28,8 +28,11 @@ class UserStore:
                 default=str,
             )
 
-    def create_user(self, email: str, password_hash: str) -> UserAccount:
-        user = UserAccount(email=email, password_hash=password_hash)
+    def list_users(self) -> list[UserAccount]:
+        return list(self._users.values())
+
+    def create_user(self, email: str, password_hash: str, role: str = "user") -> UserAccount:
+        user = UserAccount(email=email, password_hash=password_hash, role=role)
         self._users[user.id] = user
         self.save()
         return user
@@ -42,6 +45,16 @@ class UserStore:
 
     def get_by_id(self, user_id: str) -> UserAccount | None:
         return self._users.get(user_id)
+
+    def delete_user(self, user_id: str) -> bool:
+        if user_id not in self._users:
+            return False
+        del self._users[user_id]
+        self.save()
+        return True
+
+    def count_admins(self) -> int:
+        return sum(1 for user in self._users.values() if user.role == "admin")
 
     def add_session(self, user_id: str, session_id: str) -> None:
         user = self._users.get(user_id)

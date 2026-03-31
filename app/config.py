@@ -110,6 +110,7 @@ class AuthSettings(BaseModel):
     jwt_algorithm: str = "HS256"
     jwt_expire_hours: int = 72
     max_upload_bytes_per_user: int = 1_073_741_824  # 1GB
+    allow_self_registration: bool = False
 
 
 class OpenStaxSettings(BaseModel):

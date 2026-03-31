@@ -1,9 +1,8 @@
 <script>
   import { push } from 'svelte-spa-router';
-  import { login, register } from '../lib/api.js';
+  import { login } from '../lib/api.js';
   import { authToken, currentUser } from '../lib/stores.js';
 
-  let isLogin = $state(true);
   let email = $state('');
   let password = $state('');
   let loading = $state(false);
@@ -15,9 +14,7 @@
     loading = true;
     error = '';
     try {
-      const res = isLogin
-        ? await login(email, password)
-        : await register(email, password);
+      const res = await login(email, password);
       authToken.set(res.token);
       currentUser.set(res.user);
       push('/');
@@ -38,18 +35,7 @@
 <div class="flex justify-center items-center min-h-[80vh]">
   <div class="card bg-base-100 shadow-md w-full max-w-md">
     <div class="card-body">
-      <div role="tablist" class="tabs tabs-bordered mb-4">
-        <button
-          role="tab"
-          class="tab {isLogin ? 'tab-active' : ''}"
-          onclick={() => { isLogin = true; error = ''; }}
-        >Login</button>
-        <button
-          role="tab"
-          class="tab {!isLogin ? 'tab-active' : ''}"
-          onclick={() => { isLogin = false; error = ''; }}
-        >Register</button>
-      </div>
+      <h2 class="text-2xl font-semibold mb-4 text-center">Login</h2>
 
       <form onsubmit={handleSubmit}>
         <div class="form-control mb-4">
@@ -91,7 +77,7 @@
             {#if loading}
               <span class="loading loading-spinner"></span>
             {/if}
-            {isLogin ? 'Login' : 'Create Account'}
+            Login
           </button>
         </div>
       </form>
