@@ -1,0 +1,50 @@
+app:
+  name: "LLM Tutor"
+  debug: true
+  data_dir: "data"
+
+auth:
+  jwt_expire_hours: 72
+  max_upload_bytes_per_user: 1073741824
+
+qdrant:
+  mode: "memory"
+  path: "data/qdrant"
+  host: "localhost"
+  port: 6333
+  collection_name: "tutor_materials"
+  embedding_dimension: 1536
+
+gathering:
+  max_iterations: 3
+  queries_per_iteration: 5
+  min_relevance_score: 3
+  tavily_search_depth: "advanced"
+  max_materials: 20
+
+curriculum:
+  max_concepts: 10
+  max_objectives_per_concept: 3
+  chunk_size: 512
+  chunk_overlap: 50
+
+dialogue:
+  max_history_messages: 20
+  rag_top_k: 5
+  rag_similarity_threshold: 0.7
+
+pdf:
+  upload_dir: "data/uploads"
+  chunk_size: 1500
+  chunk_overlap: 150
+  max_file_size_mb: 500
+
+openstax:
+  upload_dir: "data/openstax"
+  collection_name: "openstax_materials"
+  chunk_size: 1500
+  chunk_overlap: 150
+
+logging:
+  log_dir: "data/logs"
+  log_full_payloads: true

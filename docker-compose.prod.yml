@@ -1,0 +1,29 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_tutor_app
+    env_file:
+      - .env.production
+    environment:
+      - SETTINGS_FILE=config/settings.prod.yaml
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: llm_tutor_nginx
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/letsencrypt:ro
+      - ./deploy/certbot-www:/var/www/certbot:ro
+    restart: unless-stopped

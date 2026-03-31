@@ -1,0 +1,8 @@
+[project]
+name = "llm-tutor"
+version = "0.1.0"
+description = "Personal LLM tutor with learner-aware research, curriculum generation, and Socratic dialogue"
+requires-python = ">=3.12"
+
+[tool.setuptools]
+packages = ["app"]
