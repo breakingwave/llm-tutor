@@ -2,6 +2,7 @@
   import Router, { replace } from 'svelte-spa-router';
   import { wrap } from 'svelte-spa-router/wrap';
   import Login from './components/Login.svelte';
+  import Workspace from './components/Workspace.svelte';
   import Onboarding from './components/Onboarding.svelte';
   import Dashboard from './components/Dashboard.svelte';
   import Library from './components/Library.svelte';
@@ -18,7 +19,8 @@
 
   const routes = {
     '/login': Login,
-    '/': wrap({ component: Onboarding, conditions: [authGuard] }),
+    '/': wrap({ component: Workspace, conditions: [authGuard] }),
+    '/onboarding': wrap({ component: Onboarding, conditions: [authGuard] }),
     '/dashboard/:sessionId': wrap({ component: Dashboard, conditions: [authGuard] }),
     '/library/:sessionId': wrap({ component: Library, conditions: [authGuard] }),
     '/openstax': wrap({ component: OpenStaxBrowser, conditions: [authGuard] }),

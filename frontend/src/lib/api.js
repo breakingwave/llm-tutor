@@ -29,6 +29,8 @@ export async function api(path, options = {}) {
 // Auth
 export const login = (email, password) => api('/api/auth/login', { method: 'POST', body: { email, password } });
 export const getMe = () => api('/api/auth/me');
+export const updateMyBackground = (background) =>
+  api('/api/auth/me/background', { method: 'PUT', body: { background } });
 
 export function logout() {
   localStorage.removeItem('token');
@@ -36,6 +38,7 @@ export function logout() {
 }
 
 // Session
+export const listLearningTopics = () => api('/api/sessions/topics');
 export const createSession = (data) => api('/api/sessions', { method: 'POST', body: data });
 export const getSession = (id) => api(`/api/sessions/${id}`);
 export const updateBackground = (id, bg) => api(`/api/sessions/${id}/background`, { method: 'PUT', body: { background: bg } });

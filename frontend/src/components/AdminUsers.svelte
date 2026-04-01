@@ -4,6 +4,7 @@
   import { createUser, deleteUser, getMe, listUsers } from '../lib/api.js';
   import { currentUser } from '../lib/stores.js';
 
+  let { embedded = false } = $props();
   let users = $state([]);
   let loading = $state(true);
   let submitting = $state(false);
@@ -65,14 +66,16 @@
   onMount(loadUsers);
 </script>
 
-<div class="navbar bg-base-100 shadow-sm">
-  <div class="flex-1">
-    <span class="text-xl font-semibold px-4">Admin Users</span>
+{#if !embedded}
+  <div class="navbar bg-base-100 shadow-sm">
+    <div class="flex-1">
+      <span class="text-xl font-semibold px-4">Admin Users</span>
+    </div>
+    <div class="flex-none px-4">
+      <button class="btn btn-ghost btn-sm" onclick={() => push('/')}>Back</button>
+    </div>
   </div>
-  <div class="flex-none px-4">
-    <button class="btn btn-ghost btn-sm" onclick={() => push('/')}>Back</button>
-  </div>
-</div>
+{/if}
 
 <div class="p-6 grid gap-6 md:grid-cols-2">
   <div class="card bg-base-100 shadow-md">

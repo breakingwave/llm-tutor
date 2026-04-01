@@ -3,6 +3,7 @@
   import { listOpenStaxBooks, uploadOpenStaxBook, deleteOpenStaxBook, reindexOpenStaxBook, getMe, logout } from '../lib/api.js';
   import { currentUser } from '../lib/stores.js';
 
+  let { embedded = false } = $props();
   let books = $state([]);
   let loading = $state(true);
   let uploading = $state(false);
@@ -64,15 +65,17 @@
 
 </script>
 
-<div class="navbar bg-base-100 shadow-sm">
-  <div class="flex-1">
-    <a href="#/" class="text-xl font-semibold px-4">LLM Tutor</a>
+{#if !embedded}
+  <div class="navbar bg-base-100 shadow-sm">
+    <div class="flex-1">
+      <a href="#/" class="text-xl font-semibold px-4">LLM Tutor</a>
+    </div>
+    <div class="flex-none px-4 flex gap-2 items-center">
+      <a href="#/" class="btn btn-ghost btn-sm">Home</a>
+      <button class="btn btn-ghost btn-sm" onclick={logout}>Logout</button>
+    </div>
   </div>
-  <div class="flex-none px-4 flex gap-2 items-center">
-    <a href="#/" class="btn btn-ghost btn-sm">Home</a>
-    <button class="btn btn-ghost btn-sm" onclick={logout}>Logout</button>
-  </div>
-</div>
+{/if}
 
 <div class="container mx-auto p-4">
   <div class="flex justify-between items-center mb-6">

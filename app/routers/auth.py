@@ -15,6 +15,10 @@ class AuthForm(BaseModel):
     password: str
 
 
+class BackgroundUpdate(BaseModel):
+    background: str
+
+
 @router.post("/register")
 async def register(
     form: AuthForm,
@@ -61,6 +65,17 @@ async def get_me(user: UserAccount = Depends(get_current_user)):
         "id": user.id,
         "email": user.email,
         "role": user.role,
+        "background": user.background,
         "total_upload_bytes": user.total_upload_bytes,
         "session_ids": user.session_ids,
     }
+
+
+@router.put("/me/background")
+async def update_my_background(
+    update: BackgroundUpdate,
+    user: UserAccount = Depends(get_current_user),
+    store: UserStore = Depends(get_user_store),
+):
+    store.update_background(user.id, update.background)
+    return {"status": "updated"}

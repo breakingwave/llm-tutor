@@ -9,6 +9,7 @@ class UserAccount(BaseModel):
     email: str
     password_hash: str
     role: str = "user"  # "user" | "admin"
+    background: str = ""
     total_upload_bytes: int = 0
     session_ids: list[str] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
