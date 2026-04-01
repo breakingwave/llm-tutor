@@ -38,11 +38,11 @@ class CurriculumService:
         )
 
         # Step 2: Design — generate objectives
-        objectives = await self._design(concepts, material_summaries, profile.id)
+        objectives = await self._design(concepts, material_summaries, depth, profile.id)
 
         # Step 3: Develop — create curriculum items
         items = await self._develop(
-            objectives, materials, material_summaries, profile.id
+            objectives, materials, material_summaries, depth, profile.id
         )
 
         curriculum = Curriculum(
@@ -95,6 +95,7 @@ class CurriculumService:
         self,
         concepts: list[Concept],
         material_summaries: str,
+        depth: str,
         session_id: str,
     ) -> list[LearningObjective]:
         concepts_json = json.dumps(
@@ -106,6 +107,7 @@ class CurriculumService:
             {
                 "concepts_json": concepts_json,
                 "material_summaries": material_summaries,
+                "depth": depth,
                 "max_objectives_per_concept": str(self.settings.max_objectives_per_concept),
             },
         )
@@ -133,6 +135,7 @@ class CurriculumService:
         objectives: list[LearningObjective],
         materials: list[Material],
         material_summaries: str,
+        depth: str,
         session_id: str,
     ) -> list[CurriculumItem]:
         objectives_json = json.dumps(
@@ -150,6 +153,7 @@ class CurriculumService:
             {
                 "objectives_json": objectives_json,
                 "materials_with_ids": materials_with_ids,
+                "depth": depth,
             },
         )
         response = await self.llm.completion(

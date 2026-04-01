@@ -12,6 +12,8 @@ class EnvSettings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
     tavily_api_key: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""
     cors_origins: str = "http://localhost:5173"
     jwt_secret: str = ""
 

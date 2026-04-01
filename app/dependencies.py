@@ -51,10 +51,13 @@ def get_api_logger() -> APILogger:
 
 @lru_cache
 def get_llm_service() -> LLMService:
+    env = get_env_settings()
     return LLMService(
         models_config=get_models_config(),
         prompts_config=get_prompts_config(),
         api_logger=get_api_logger(),
+        llm_base_url=env.llm_base_url,
+        llm_api_key=env.llm_api_key,
     )
 
 

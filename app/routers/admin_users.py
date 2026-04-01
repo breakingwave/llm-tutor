@@ -1,10 +1,13 @@
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.config import Settings
+from app.services.api_logger import APILogger
 from app.models.account import UserAccount
 from app.services.auth import AuthService
 from app.services.session_store import SessionStore
@@ -12,6 +15,7 @@ from app.services.user_store import UserStore
 from app.services.vector_store import VectorStoreService
 from app.dependencies import (
     get_auth_service,
+    get_api_logger,
     get_current_user,
     get_session_store,
     get_settings,
@@ -27,6 +31,36 @@ class CreateUserRequest(BaseModel):
     email: str
     password: str
     role: str = "user"
+
+
+@router.get("/logs/costs")
+async def get_cost_breakdown(
+    _: UserAccount = Depends(require_admin),
+    api_logger: APILogger = Depends(get_api_logger),
+    since: str | None = Query(default=None),
+    until: str | None = Query(default=None),
+):
+    try:
+        since_dt = datetime.fromisoformat(since) if since else None
+        until_dt = datetime.fromisoformat(until) if until else None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime filter: {exc}")
+    by_module_service = api_logger.aggregate_costs(
+        since=since_dt,
+        until=until_dt,
+        group_by=("module", "service"),
+    )
+    by_session = api_logger.aggregate_costs(
+        since=since_dt,
+        until=until_dt,
+        group_by=("session_id",),
+    )
+    return {
+        "since": since_dt.isoformat() if since_dt else None,
+        "until": until_dt.isoformat() if until_dt else None,
+        "by_module_service": by_module_service,
+        "by_session": by_session,
+    }
 
 
 @router.get("")

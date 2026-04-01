@@ -17,10 +17,14 @@ class LLMService:
         models_config: ModelsConfig,
         prompts_config: PromptsConfig,
         api_logger: APILogger,
+        llm_base_url: str = "",
+        llm_api_key: str = "",
     ):
         self.models_config = models_config
         self.prompts_config = prompts_config
         self.api_logger = api_logger
+        self.llm_base_url = llm_base_url
+        self.llm_api_key = llm_api_key
 
     def get_model_config(self, module: str, operation: str) -> ModelConfig:
         return self.models_config.get_model_config(module, operation)
@@ -93,6 +97,10 @@ class LLMService:
         }
         if response_format:
             completion_kwargs["response_format"] = response_format
+        if self.llm_base_url:
+            completion_kwargs["api_base"] = self.llm_base_url
+        if self.llm_api_key:
+            completion_kwargs["api_key"] = self.llm_api_key
 
         try:
             response = await litellm.acompletion(**completion_kwargs)
@@ -103,7 +111,7 @@ class LLMService:
             try:
                 cost = litellm.completion_cost(completion_response=response)
             except Exception:
-                pass
+                cost = None
         except Exception as e:
             error_str = str(e)
             raise
@@ -117,7 +125,7 @@ class LLMService:
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=latency,
-                cost_estimate_usd=cost,
+                cost_estimate_usd=float(cost) if cost is not None else 0.0,
                 request_payload={"messages": _summarize_messages(messages)},
                 response_payload={"content": response_content[:500]} if response_content else {},
                 error=error_str,
@@ -160,6 +168,10 @@ class LLMService:
         }
         if response_format:
             completion_kwargs["response_format"] = response_format
+        if self.llm_base_url:
+            completion_kwargs["api_base"] = self.llm_base_url
+        if self.llm_api_key:
+            completion_kwargs["api_key"] = self.llm_api_key
 
         try:
             response = await litellm.acompletion(**completion_kwargs)
@@ -192,7 +204,7 @@ class LLMService:
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 latency_ms=latency,
-                cost_estimate_usd=cost,
+                cost_estimate_usd=float(cost) if cost is not None else 0.0,
                 request_payload={"messages": _summarize_messages(messages)},
                 response_payload={"content": full_content[:500]} if full_content else {},
                 error=error_str,

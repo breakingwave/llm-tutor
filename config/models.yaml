@@ -1,45 +1,45 @@
 defaults:
-  primary_model: "openai/gpt-5-mini"
-  fallback_model: "anthropic/claude-sonnet-4-6"
+  primary_model: "openai/gpt-5.4-nano"
+  fallback_model: "openai/gpt-5.4-nano"
   embedding_model: "openai/text-embedding-3-small"
 
 module_overrides:
   gathering:
     extract_hooks:
-      model: "openai/gpt-5-mini"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 1000
       reasoning_effort: "low"
     generate_queries:
-      model: "openai/gpt-5-mini"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 2000
       reasoning_effort: "low"
       response_format:
         type: json_object
     score_relevance:
-      model: "openai/gpt-5-mini"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 500
       reasoning_effort: "low"
       response_format:
         type: json_object
     summarize:
-      model: "openai/gpt-5-mini"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 1000
       reasoning_effort: "low"
   curriculum:
     analyse:
-      model: "anthropic/claude-sonnet-4-6"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 4000
       reasoning_effort: "low"
       response_format:
         type: json_object
     design:
-      model: "anthropic/claude-sonnet-4-6"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 4000
       reasoning_effort: "low"
       response_format:
         type: json_object
     develop:
-      model: "openai/gpt-5-mini"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 6000
       reasoning_effort: "low"
       response_format:
@@ -47,7 +47,7 @@ module_overrides:
 
   dialogue:
     chat:
-      model: "anthropic/claude-sonnet-4-6"
+      model: "openai/gpt-5.4-nano"
       max_tokens: 2000
       stream: true
       reasoning_effort: "low"
