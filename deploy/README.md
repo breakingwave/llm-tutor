@@ -22,6 +22,8 @@ Then edit `/opt/llm_tutor/.env.production` with real keys:
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `TAVILY_API_KEY`
+- `LLM_BASE_URL` (optional, for OpenAI-compatible gateways such as `https://ai-gateway.andrew.cmu.edu`)
+- `LLM_API_KEY` (optional, project/provider key for `LLM_BASE_URL`)
 - `CORS_ORIGINS` (for example: `https://your-domain.com`)
 
 ## 2) First Manual Deploy

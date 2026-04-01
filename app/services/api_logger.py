@@ -76,6 +76,30 @@ class APILogger:
                         return results
         return results
 
+    def aggregate_costs(
+        self,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        group_by: tuple[str, ...] = ("module", "service"),
+    ) -> list[dict]:
+        grouped: dict[tuple, dict] = {}
+        for entry in self.query_logs(since=since, until=until, limit=1_000_000):
+            cost = float(entry.get("cost_estimate_usd") or 0.0)
+            key = tuple(entry.get(field, "unknown") for field in group_by)
+            if key not in grouped:
+                grouped[key] = {
+                    "group": {field: entry.get(field, "unknown") for field in group_by},
+                    "calls": 0,
+                    "total_cost_usd": 0.0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                }
+            grouped[key]["calls"] += 1
+            grouped[key]["total_cost_usd"] += cost
+            grouped[key]["input_tokens"] += int(entry.get("input_tokens") or 0)
+            grouped[key]["output_tokens"] += int(entry.get("output_tokens") or 0)
+        return sorted(grouped.values(), key=lambda row: row["total_cost_usd"], reverse=True)
+
 
 def _truncate_payload(payload: dict, max_str_len: int = 200) -> dict:
     truncated = {}

@@ -105,10 +105,16 @@ curriculum:
       Concepts (with IDs):
       {concepts_json}
 
+      Learning depth: {depth}
+
       Material summaries:
       {material_summaries}
 
       For each concept, generate 1-{max_objectives_per_concept} learning objectives.
+      Match objective challenge and scope to the depth:
+      - introductory: focus on fundamentals and core understanding
+      - comprehensive: include practical application and intermediate analysis
+      - expert: include advanced synthesis, critique, and design-level mastery
 
   develop:
     system: |
@@ -125,10 +131,16 @@ curriculum:
       Learning objectives (with IDs):
       {objectives_json}
 
+      Learning depth: {depth}
+
       Available materials (with IDs and summaries):
       {materials_with_ids}
 
       Create ordered curriculum items for optimal learning progression.
+      Depth requirements:
+      - introductory: smaller conceptual jumps, more scaffolding in outlines
+      - comprehensive: balanced progression with application-focused outlines
+      - expert: faster progression, deeper technical detail, and advanced integration
 
 dialogue:
   socratic_system: |

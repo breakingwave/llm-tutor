@@ -287,7 +287,7 @@
             Materials for <strong>{selectedTopic.topic}</strong>
           </p>
         {/if}
-        <Library embedded={true} sessionId={selectedSessionId} excludeSources={['openstax']} />
+        <Library embedded={true} sessionId={selectedSessionId} />
       {/if}
     {:else if activeTab === TAB.OPENSTAX}
       <OpenStaxBrowser embedded={true} />

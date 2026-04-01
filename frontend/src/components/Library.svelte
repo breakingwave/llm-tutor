@@ -3,7 +3,7 @@
   import { getSession, deleteMaterial, addManualMaterial } from '../lib/api.js';
   import Modal from './Modal.svelte';
 
-  let { params, embedded = false, sessionId: sessionIdProp = null, excludeSources = ['openstax'] } = $props();
+  let { params, embedded = false, sessionId: sessionIdProp = null, excludeSources = [] } = $props();
   let sessionData = $state(null);
   let loading = $state(true);
   let addOpen = $state(false);
