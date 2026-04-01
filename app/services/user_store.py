@@ -67,3 +67,10 @@ class UserStore:
         if user:
             user.total_upload_bytes += delta_bytes
             self.save()
+
+    def update_background(self, user_id: str, background: str) -> None:
+        user = self._users.get(user_id)
+        if user is None:
+            return
+        user.background = background
+        self.save()

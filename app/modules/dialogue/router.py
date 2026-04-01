@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from app.models.chat import ChatRequest, ChatSession
+from app.models.curriculum import Curriculum
 from app.services.session_store import SessionStore, SessionData
 from app.services.llm import LLMService
 from app.modules.dialogue.service import DialogueService
@@ -35,7 +36,7 @@ async def send_message(
     if request.curriculum_item_id:
         chat_session.active_item_id = request.curriculum_item_id
 
-    curriculum = session_data.curricula[0] if session_data.curricula else None
+    curriculum = _pick_curriculum(session_data)
 
     # TODO: Add RAG context retrieval here when vector store is ready
     rag_context = None
@@ -75,6 +76,20 @@ async def get_chat_history(
         "session_id": session_id,
         "messages": [m.model_dump(mode="json") for m in chat_session.messages],
     }
+
+
+def _pick_curriculum(session_data: SessionData) -> Curriculum | None:
+    curricula = session_data.curricula or []
+    if not curricula:
+        return None
+    primary_topic = None
+    if session_data.user_profile.goals:
+        primary_topic = session_data.user_profile.goals[0].topic
+    if primary_topic:
+        for c in curricula:
+            if c.goal_topic == primary_topic:
+                return c
+    return curricula[-1]
 
 
 def _get_or_create_chat_session(session_data: SessionData, user_id: str) -> ChatSession:
