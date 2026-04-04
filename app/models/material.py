@@ -20,7 +20,7 @@ class Material(BaseModel):
     summary: str = ""
     relevance_score: float | None = None
     file_name: str = ""
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -31,5 +31,5 @@ class MaterialChunk(BaseModel):
     chunk_index: int
     chapter: str = ""
     section: str = ""
-    curriculum_item_ids: list[str] = []
+    curriculum_item_ids: list[str] = Field(default_factory=list)
     embedding_id: str | None = None

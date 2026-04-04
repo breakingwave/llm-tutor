@@ -18,6 +18,7 @@ class AutoChunkingStrategy(ChunkingStrategy):
         *,
         file_name: str = "",
         toc_entries: list[dict] | None = None,
+        page_texts: list[str] | None = None,
         chunk_size: int = 1500,
         chunk_overlap: int = 150,
     ) -> list[MaterialChunk]:
@@ -26,6 +27,7 @@ class AutoChunkingStrategy(ChunkingStrategy):
                 text, material_id,
                 file_name=file_name,
                 toc_entries=toc_entries,
+                page_texts=page_texts,
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
             )

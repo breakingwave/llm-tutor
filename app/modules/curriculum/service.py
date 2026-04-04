@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from app.models.curriculum import Concept, LearningObjective, CurriculumItem, Curriculum
 from app.utils.json_parse import extract_json
@@ -18,6 +19,37 @@ class CurriculumService:
 
     def _background_summary(self, profile: UserProfile) -> str:
         return profile.background or "No background provided"
+
+    def _normalize_material_ids(
+        self,
+        item: CurriculumItem,
+        materials: list[Material],
+    ) -> list[str]:
+        valid_ids = {material.id for material in materials}
+        explicit_ids = [material_id for material_id in item.material_ids if material_id in valid_ids]
+        if explicit_ids:
+            return explicit_ids
+
+        item_terms = set(
+            re.findall(r"\w+", f"{item.title} {item.content_outline}".lower())
+        )
+        if not item_terms:
+            return []
+
+        ranked: list[tuple[int, str]] = []
+        for material in materials:
+            material_terms = set(
+                re.findall(
+                    r"\w+",
+                    f"{material.title} {material.summary or material.content[:600]}".lower(),
+                )
+            )
+            overlap = len(item_terms & material_terms)
+            if overlap > 0:
+                ranked.append((overlap, material.id))
+
+        ranked.sort(reverse=True)
+        return [material_id for _, material_id in ranked[:3]]
 
     async def generate_curriculum(
         self,
@@ -169,7 +201,16 @@ class CurriculumService:
             else:
                 items = []
             if isinstance(items, list):
-                return [CurriculumItem(**item) for item in items if isinstance(item, dict)]
+                normalized_items: list[CurriculumItem] = []
+                for idx, item_data in enumerate(items):
+                    if not isinstance(item_data, dict):
+                        continue
+                    item = CurriculumItem(**item_data)
+                    item.material_ids = self._normalize_material_ids(item, materials)
+                    if not item.order:
+                        item.order = idx + 1
+                    normalized_items.append(item)
+                return normalized_items
             return []
         except (json.JSONDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to parse develop response: %s", e)

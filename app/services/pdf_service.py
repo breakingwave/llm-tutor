@@ -1,5 +1,6 @@
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import pymupdf
@@ -12,6 +13,13 @@ from app.services.api_logger import APILogger
 from app.services.chunking import AutoChunkingStrategy, ChunkingStrategy
 
 logger = logging.getLogger("llm_tutor.pdf")
+
+
+@dataclass(slots=True)
+class ParsedPDF:
+    text: str
+    toc_entries: list[dict]
+    page_texts: list[str]
 
 
 class PDFService:
@@ -27,18 +35,35 @@ class PDFService:
 
     async def save_upload(self, file: UploadFile, session_id: str) -> Path:
         """Save uploaded PDF to data/uploads/{session_id}/."""
-        upload_dir = Path(self.settings.upload_dir) / session_id
-        upload_dir.mkdir(parents=True, exist_ok=True)
-
-        file_path = upload_dir / file.filename
         content = await file.read()
+        return self.save_bytes(file.filename or "upload.pdf", content, session_id)
 
+    def save_bytes(self, file_name: str, content: bytes, session_id: str) -> Path:
+        upload_dir = Path(self.settings.upload_dir) / session_id
+        return self.save_bytes_to_dir(
+            file_name=file_name,
+            content=content,
+            target_dir=upload_dir,
+            max_file_size_mb=self.settings.max_file_size_mb,
+        )
+
+    def save_bytes_to_dir(
+        self,
+        file_name: str,
+        content: bytes,
+        target_dir: Path,
+        *,
+        max_file_size_mb: int | None = None,
+    ) -> Path:
+        target_dir.mkdir(parents=True, exist_ok=True)
+        file_path = target_dir / file_name
         # Check file size
-        max_bytes = self.settings.max_file_size_mb * 1024 * 1024
+        max_mb = max_file_size_mb if max_file_size_mb is not None else self.settings.max_file_size_mb
+        max_bytes = max_mb * 1024 * 1024
         if len(content) > max_bytes:
             raise ValueError(
                 f"File too large: {len(content) / 1024 / 1024:.1f}MB "
-                f"(max {self.settings.max_file_size_mb}MB)"
+                f"(max {max_mb}MB)"
             )
 
         file_path.write_bytes(content)
@@ -46,15 +71,16 @@ class PDFService:
         return file_path
 
     def parse_pdf(self, file_path: Path) -> tuple[str, list[dict]]:
-        """Extract full text and ToC from a PDF via PyMuPDF.
+        parsed = self.parse_pdf_document(file_path)
+        return parsed.text, parsed.toc_entries
 
-        Returns (full_text, toc_entries) where toc_entries is
-        [{level, title, page_num}, ...].
-        """
+    def parse_pdf_document(self, file_path: Path) -> ParsedPDF:
+        """Extract full text, ToC, and page-aligned text from a PDF via PyMuPDF."""
         start = time.perf_counter()
         error_str = None
         text = ""
         toc_entries: list[dict] = []
+        page_texts: list[str] = []
 
         try:
             doc = pymupdf.open(str(file_path))
@@ -69,12 +95,13 @@ class PDFService:
                 })
 
             # Extract text page by page
-            pages = []
+            text_pages: list[str] = []
             for page in doc:
                 page_text = page.get_text()
+                page_texts.append(page_text)
                 if page_text.strip():
-                    pages.append(page_text)
-            text = "\n\n".join(pages)
+                    text_pages.append(page_text)
+            text = "\n\n".join(text_pages)
             doc.close()
         except Exception as e:
             error_str = str(e)
@@ -95,7 +122,7 @@ class PDFService:
                 error=error_str,
             ))
 
-        return text, toc_entries
+        return ParsedPDF(text=text, toc_entries=toc_entries, page_texts=page_texts)
 
     def chunk_pdf(
         self,
@@ -103,6 +130,7 @@ class PDFService:
         toc_entries: list[dict],
         file_name: str,
         material_id: str,
+        page_texts: list[str] | None = None,
     ) -> list[MaterialChunk]:
         """Chunk PDF text using the configured chunking strategy."""
         return self.chunker.chunk(
@@ -110,6 +138,7 @@ class PDFService:
             material_id,
             file_name=file_name,
             toc_entries=toc_entries if toc_entries else None,
+            page_texts=page_texts,
             chunk_size=self.settings.chunk_size,
             chunk_overlap=self.settings.chunk_overlap,
         )

@@ -62,8 +62,8 @@ async def upload_pdf(
         file_path = await pdf_service.save_upload(file, session_id)
 
         # Parse PDF
-        text, toc_entries = pdf_service.parse_pdf(file_path)
-        if not text.strip():
+        parsed = pdf_service.parse_pdf_document(file_path)
+        if not parsed.text.strip():
             raise HTTPException(status_code=400, detail="PDF contains no extractable text")
 
         # Create material
@@ -72,16 +72,22 @@ async def upload_pdf(
             source=MaterialSource.PDF_UPLOAD,
             title=title,
             file_name=file.filename,
-            content=text[:5000],  # store first 5000 chars as preview
+            content=parsed.text[:5000],  # store first 5000 chars as preview
             metadata={
                 "file_path": str(file_path),
-                "total_length": len(text),
-                "toc_entries": len(toc_entries),
+                "total_length": len(parsed.text),
+                "toc_entries": len(parsed.toc_entries),
             },
         )
 
         # Chunk
-        chunks = pdf_service.chunk_pdf(text, toc_entries, file.filename, material.id)
+        chunks = pdf_service.chunk_pdf(
+            parsed.text,
+            parsed.toc_entries,
+            file.filename,
+            material.id,
+            page_texts=parsed.page_texts,
+        )
 
         # Embed and index
         indexed = await vector_store.index_chunks(chunks, session_id=session_id)
@@ -103,8 +109,8 @@ async def upload_pdf(
             "title": title,
             "file_name": file.filename,
             "chunk_count": indexed,
-            "text_length": len(text),
-            "toc_entries": len(toc_entries),
+            "text_length": len(parsed.text),
+            "toc_entries": len(parsed.toc_entries),
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

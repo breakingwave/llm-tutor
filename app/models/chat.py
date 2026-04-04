@@ -24,7 +24,7 @@ class ChatSession(BaseModel):
     user_id: str
     curriculum_id: str | None = None
     active_item_id: str | None = None
-    messages: list[ChatMessage] = []
+    messages: list[ChatMessage] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

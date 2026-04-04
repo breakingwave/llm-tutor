@@ -6,8 +6,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 
 from app.config import EnvSettings, load_settings
 from app.dependencies import get_api_logger
@@ -20,6 +18,7 @@ from app.modules.dialogue.router import router as dialogue_router
 from app.modules.curriculum.router import router as curriculum_router
 from app.modules.gathering.router import router as gathering_router
 from app.modules.gathering.pdf_router import router as pdf_router
+from app.ui import init_nicegui
 
 
 @asynccontextmanager
@@ -138,15 +137,4 @@ app.include_router(curriculum_router)
 app.include_router(gathering_router)
 app.include_router(pdf_router)
 
-# Serve Svelte SPA build (production)
-spa_dir = Path(__file__).parent.parent / "frontend" / "dist"
-if spa_dir.exists():
-    app.mount("/assets", StaticFiles(directory=str(spa_dir / "assets")), name="spa_assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        # Serve actual files if they exist, otherwise index.html for SPA routing
-        file_path = spa_dir / full_path
-        if full_path and file_path.exists() and file_path.is_file():
-            return FileResponse(file_path)
-        return FileResponse(spa_dir / "index.html")
+init_nicegui(app)
