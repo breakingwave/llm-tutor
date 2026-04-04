@@ -79,10 +79,12 @@ def get_pdf_service() -> PDFService:
 def get_vector_store_service() -> VectorStoreService:
     settings = get_settings()
     models = get_models_config()
+    env_key = get_env_settings().openai_api_key
     return VectorStoreService(
         qdrant_settings=settings.qdrant,
         embedding_model=models.defaults.get("embedding_model", "openai/text-embedding-3-small"),
         api_logger=get_api_logger(),
+        openai_api_key=env_key.strip() if env_key else None,
     )
 
 

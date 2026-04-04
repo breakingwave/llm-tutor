@@ -1,6 +1,7 @@
 import hashlib
 import logging
 import math
+import os
 import re
 import time
 from collections import Counter
@@ -35,10 +36,13 @@ class VectorStoreService:
         qdrant_settings: QdrantSettings,
         embedding_model: str,
         api_logger: APILogger,
+        openai_api_key: str | None = None,
     ):
         self.settings = qdrant_settings
         self.embedding_model = embedding_model
         self.api_logger = api_logger
+        self._openai_api_key = (openai_api_key or "").strip() or None
+        self._openai_client: openai.OpenAI | None = None
 
         if qdrant_settings.path:
             self.client = QdrantClient(path=qdrant_settings.path)
@@ -49,8 +53,6 @@ class VectorStoreService:
                 host=qdrant_settings.host,
                 port=qdrant_settings.port,
             )
-
-        self.openai_client = openai.OpenAI()
 
         # BM25 vocabulary per collection: collection_name → stats
         self._bm25: dict[str, dict] = {}
@@ -85,13 +87,26 @@ class VectorStoreService:
                 "avg_doc_len": 0.0,
             }
 
+    def _get_openai_client(self) -> openai.OpenAI:
+        """Lazily construct the client so importing the app works without OPENAI_API_KEY (e.g. CI)."""
+        if self._openai_client is not None:
+            return self._openai_client
+        key = self._openai_api_key or os.environ.get("OPENAI_API_KEY", "").strip()
+        if not key:
+            raise openai.OpenAIError(
+                "The api_key client option must be set either by passing api_key to the client "
+                "or by setting the OPENAI_API_KEY environment variable"
+            )
+        self._openai_client = openai.OpenAI(api_key=key)
+        return self._openai_client
+
     def _embed_dense(self, texts: list[str]) -> list[list[float]]:
         """Embed texts via OpenAI embeddings API (batched)."""
         all_embeddings: list[list[float]] = []
         batch_size = 100
         for i in range(0, len(texts), batch_size):
             batch = texts[i : i + batch_size]
-            response = self.openai_client.embeddings.create(
+            response = self._get_openai_client().embeddings.create(
                 model=self.embedding_model.removeprefix("openai/"),
                 input=batch,
             )
