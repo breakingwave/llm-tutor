@@ -12,6 +12,7 @@ class ParagraphChunkingStrategy(ChunkingStrategy):
         *,
         file_name: str = "",
         toc_entries: list[dict] | None = None,
+        page_texts: list[str] | None = None,
         chunk_size: int = 1500,
         chunk_overlap: int = 150,
     ) -> list[MaterialChunk]:

@@ -16,6 +16,7 @@ from app.models.account import UserAccount
 from app.services.api_logger import APILogger
 from app.services.auth import AuthService
 from app.services.llm import LLMService
+from app.services.openstax_service import OpenStaxService
 from app.services.openstax_store import OpenStaxStore
 from app.services.pdf_service import PDFService
 from app.services.session_store import SessionStore
@@ -86,6 +87,16 @@ def get_vector_store_service() -> VectorStoreService:
 def get_openstax_store() -> OpenStaxStore:
     settings = get_settings()
     return OpenStaxStore(settings.openstax.upload_dir)
+
+
+@lru_cache
+def get_openstax_service() -> OpenStaxService:
+    return OpenStaxService(
+        settings=get_settings(),
+        pdf_service=get_pdf_service(),
+        vector_store=get_vector_store_service(),
+        openstax_store=get_openstax_store(),
+    )
 
 
 @lru_cache

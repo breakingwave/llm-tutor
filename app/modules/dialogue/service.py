@@ -2,9 +2,10 @@ import logging
 from collections.abc import AsyncGenerator
 
 from app.models.chat import ChatMessage, ChatSession, MessageRole
+from app.models.curriculum import Curriculum, CurriculumItem
 from app.models.user import UserProfile
-from app.models.curriculum import Curriculum
 from app.services.llm import LLMService
+from app.services.vector_store import VectorStoreService
 from app.config import DialogueSettings
 
 logger = logging.getLogger("llm_tutor.dialogue")
@@ -14,6 +15,17 @@ class DialogueService:
     def __init__(self, llm_service: LLMService, settings: DialogueSettings):
         self.llm = llm_service
         self.settings = settings
+        self.vector_store: VectorStoreService | None = None
+        self.openstax_collection_name: str | None = None
+
+    def configure_retrieval(
+        self,
+        vector_store: VectorStoreService | None,
+        openstax_collection_name: str | None = None,
+    ) -> "DialogueService":
+        self.vector_store = vector_store
+        self.openstax_collection_name = openstax_collection_name
+        return self
 
     def _build_background_summary(self, profile: UserProfile) -> str:
         return profile.background or "No background provided"
@@ -78,6 +90,15 @@ class DialogueService:
                 current_section=current_section or "Introduction",
             )
 
+    def _get_active_item(
+        self,
+        curriculum: Curriculum | None,
+        active_item_id: str | None,
+    ) -> CurriculumItem | None:
+        if not curriculum or not active_item_id:
+            return None
+        return next((item for item in curriculum.items if item.id == active_item_id), None)
+
     def _build_chat_messages(
         self,
         system_prompt: str,
@@ -102,6 +123,7 @@ class DialogueService:
         curriculum: Curriculum | None = None,
         active_item_id: str | None = None,
         rag_context: str | None = None,
+        rag_chunk_ids: list[str] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream a Socratic dialogue response."""
         system_prompt = self._build_system_prompt(
@@ -112,6 +134,7 @@ class DialogueService:
         user_msg = ChatMessage(
             role=MessageRole.USER,
             content=message,
+            rag_chunk_ids=rag_chunk_ids,
             curriculum_item_id=active_item_id,
         )
         chat_session.messages.append(user_msg)
@@ -129,6 +152,63 @@ class DialogueService:
         assistant_msg = ChatMessage(
             role=MessageRole.ASSISTANT,
             content=full_response,
+            rag_chunk_ids=rag_chunk_ids,
             curriculum_item_id=active_item_id,
         )
         chat_session.messages.append(assistant_msg)
+
+    async def build_rag_context(
+        self,
+        profile: UserProfile,
+        message: str,
+        curriculum: Curriculum | None = None,
+        active_item_id: str | None = None,
+    ) -> tuple[str | None, list[str]]:
+        if not self.vector_store:
+            return None, []
+
+        queries: list[str] = []
+        active_item = self._get_active_item(curriculum, active_item_id)
+        if active_item:
+            queries.append(active_item.title)
+            if active_item.content_outline:
+                queries.append(f"{active_item.title}\n{active_item.content_outline}")
+        if message.strip():
+            queries.append(message.strip())
+
+        seen_chunk_ids: set[str] = set()
+        contexts: list[str] = []
+        chunk_ids: list[str] = []
+
+        for query in queries[:2]:
+            session_results = await self.vector_store.query_hybrid(
+                query_text=query,
+                top_k=self.settings.rag_top_k,
+                session_id=profile.id,
+            )
+            shared_results = []
+            if self.openstax_collection_name:
+                shared_results = await self.vector_store.query_hybrid(
+                    query_text=query,
+                    top_k=max(2, self.settings.rag_top_k // 2),
+                    session_id=profile.id,
+                    collection_name=self.openstax_collection_name,
+                )
+
+            for result in session_results + shared_results:
+                chunk_id = result["metadata"].get("chunk_id")
+                if not chunk_id or chunk_id in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(chunk_id)
+                chunk_ids.append(chunk_id)
+                chapter = result["metadata"].get("chapter") or ""
+                section = result["metadata"].get("section") or ""
+                label_parts = [part for part in [chapter, section] if part]
+                label = " / ".join(label_parts) if label_parts else "Source excerpt"
+                contexts.append(f"[{label}]\n{result['content']}")
+                if len(contexts) >= self.settings.rag_top_k:
+                    return "\n\n".join(contexts), chunk_ids
+
+        if not contexts:
+            return None, []
+        return "\n\n".join(contexts), chunk_ids
