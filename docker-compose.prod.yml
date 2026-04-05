@@ -10,6 +10,8 @@ services:
       - SETTINGS_FILE=config/settings.prod.yaml
     volumes:
       - ./data:/app/data
+    # Not published to the host — only reachable as app:8000 inside the compose network (nginx proxies).
+    # To curl Uvicorn from the host, use http://127.0.0.1/... via nginx, or: docker exec llm_tutor_app curl -sS http://127.0.0.1:8000/...
     expose:
       - "8000"
     restart: unless-stopped
