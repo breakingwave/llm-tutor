@@ -1,0 +1,122 @@
+{
+  "title": "LLM Tutor",
+  "uid": "llm-tutor-main",
+  "version": 1,
+  "schemaVersion": 38,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP Requests/s",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[5m])) by (handler, method)",
+          "legendFormat": "{{method}} {{handler}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP Latency P95 (s)",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, handler))",
+          "legendFormat": "{{handler}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{status_code=~\"5..\"}[5m])) by (handler)",
+          "legendFormat": "{{handler}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "LLM Calls/s by Module",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_calls_total[5m])) by (module, operation)",
+          "legendFormat": "{{module}}/{{operation}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "LLM Errors/s",
+      "type": "timeseries",
+      "gridPos": { "x": 8, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_api_calls_total{error=\"true\"}[5m])) by (module, operation)",
+          "legendFormat": "{{module}}/{{operation}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Token Burn Rate (tokens/s)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_tokens_total[5m])) by (direction, model)",
+          "legendFormat": "{{direction}} {{model}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Cost Rate ($/hr)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(rate(llm_cost_usd_total[1h])) by (model) * 3600",
+          "legendFormat": "{{model}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Cumulative Cost by Model ($)",
+      "type": "stat",
+      "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum(llm_cost_usd_total) by (model)",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value"
+      }
+    },
+    {
+      "id": 9,
+      "title": "LLM Latency P95 (s)",
+      "type": "timeseries",
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(llm_call_duration_seconds_bucket[5m])) by (le, module, operation))",
+          "legendFormat": "{{module}}/{{operation}}"
+        }
+      ]
+    }
+  ]
+}

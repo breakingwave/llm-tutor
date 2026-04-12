@@ -15,6 +15,7 @@ class SessionData:
         self.chat_sessions: list[ChatSession] = []
         self.materials: list[Material] = []
         self.gathering_tasks: dict[str, dict] = {}
+        self.curriculum_tasks: dict[str, dict] = {}
 
     def to_dict(self) -> dict:
         return {
@@ -24,6 +25,7 @@ class SessionData:
             "chat_sessions": [c.model_dump(mode="json") for c in self.chat_sessions],
             "materials": [m.model_dump(mode="json") for m in self.materials],
             "gathering_tasks": self.gathering_tasks,
+            "curriculum_tasks": self.curriculum_tasks,
         }
 
     @classmethod
@@ -34,6 +36,7 @@ class SessionData:
         session.chat_sessions = [ChatSession(**c) for c in data.get("chat_sessions", [])]
         session.materials = [Material(**m) for m in data.get("materials", [])]
         session.gathering_tasks = data.get("gathering_tasks", {})
+        session.curriculum_tasks = data.get("curriculum_tasks", {})
         return session
 
 

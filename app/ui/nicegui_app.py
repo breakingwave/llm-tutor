@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import html
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -124,12 +126,21 @@ body {
 }
 .viewer-pane {
   min-height: 280px;
-  max-height: 420px;
+  max-height: 520px;
   overflow: auto;
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 18px;
   background: rgba(248, 250, 252, 0.84);
   padding: 1rem 1.05rem;
+}
+.summary-strip {
+  background: rgba(15, 118, 110, 0.08);
+  border-left: 4px solid #0f766e;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 .table-shell {
   width: 100%;
@@ -167,6 +178,19 @@ body {
   position: sticky;
   top: 1rem;
 }
+.progress-log {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  font-size: 0.8rem;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  max-height: 180px;
+  overflow-y: auto;
+  line-height: 1.75;
+  color: #334155;
+  white-space: pre-wrap;
+}
 @media (max-width: 900px) {
   .app-shell {
     padding: 1rem 0.75rem 1.5rem;
@@ -175,7 +199,7 @@ body {
     height: 520px;
   }
   .viewer-pane {
-    max-height: 320px;
+    max-height: 380px;
   }
   .account-card {
     flex-basis: 100%;
@@ -230,6 +254,13 @@ class WorkspaceState:
     admin_status: str = ""
     material_search_query: str = ""
     material_search_results: str = ""
+    topic_material_id: str | None = None
+    gathering_running: bool = False
+    curriculum_running: bool = False
+    gathering_log: list[str] = field(default_factory=list)
+    curriculum_log: list[str] = field(default_factory=list)
+    gathering_task_ref: object = None  # asyncio.Task at runtime
+    curriculum_task_ref: object = None  # asyncio.Task at runtime
 
 
 @dataclass
@@ -314,6 +345,41 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
             openstax_collection_name=settings.openstax.collection_name,
         )
 
+    def format_gathering_log(update: dict) -> str:
+        stage = update.get("stage", "")
+        if stage == "hooks_extracted":
+            n = len(update.get("hooks", []))
+            return f"✓ Extracted {n} learner hooks"
+        if stage == "pdf_search_complete":
+            return f"✓ PDF search: {update.get('count', 0)} chunks found"
+        if stage == "openstax_search_complete":
+            return f"✓ OpenStax search: {update.get('count', 0)} chunks found"
+        if stage == "queries_generated":
+            it = update.get("iteration", 0) + 1
+            q = len(update.get("queries", []))
+            return f"→ Web iteration {it}: {q} search queries"
+        if stage == "iteration_complete":
+            it = update.get("iteration", 0) + 1
+            new = update.get("new_materials", 0)
+            total = update.get("total_materials", 0)
+            return f"  ↳ {new} new materials (total: {total})"
+        return f"· {stage.replace('_', ' ')}"
+
+    def format_curriculum_log(update: dict) -> str:
+        stage = update.get("stage", "")
+        if stage == "analyse_complete":
+            return f"✓ Analysis: {update.get('concepts_count', 0)} concepts identified"
+        if stage == "design_complete":
+            return f"✓ Design: {update.get('objectives_count', 0)} learning objectives"
+        if stage == "develop_complete":
+            return f"✓ Develop: {update.get('items_count', 0)} curriculum sections built"
+        return f"· {stage.replace('_', ' ')}"
+
+    def render_progress_log(log: list[str]) -> None:
+        if log:
+            lines_html = "\n".join(html.escape(line) for line in log)
+            ui.html(f'<div class="progress-log">{lines_html}</div>')
+
     def topic_label(session_id: str) -> str:
         session_data = session_store.get(session_id)
         if not session_data:
@@ -321,7 +387,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
         goal = get_primary_goal(session_data.user_profile)
         if not goal:
             return f"Untitled topic [{session_id[:8]}]"
-        return f"{goal.topic} · {goal.depth}"
+        return f"{goal.topic}" + (f" — {goal.goal}" if goal.goal else "")
 
     def topic_options(user: UserAccount) -> dict[str, str]:
         return {session_id: topic_label(session_id) for session_id in user.session_ids}
@@ -355,12 +421,12 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
 
     def build_material_rows(materials: list[Material]) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
-        for index, material in enumerate(materials, start=1):
+        for material in materials:
             rows.append(
                 {
-                    "id": str(index),
+                    "id": material.id,
                     "title": material.title,
-                    "source": material.source.value,
+                    "source": material.source.value.replace("_", " ").title(),
                     "score": str(material.relevance_score or ""),
                     "summary": (material.summary or material.content[:240]).replace("\n", " "),
                 }
@@ -464,12 +530,12 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
         if not session_data:
             return "Create a topic to begin."
         goals = session_data.user_profile.goals or []
-        primary_goal = goals[0] if goals else LearningGoal(topic="Untitled", depth="introductory")
+        primary_goal = goals[0] if goals else LearningGoal(topic="Untitled")
         return (
             f"### Topic Summary\n"
             f"**Learner:** {user.email}\n\n"
             f"**Topic:** {primary_goal.topic}\n\n"
-            f"**Depth:** {primary_goal.depth}\n\n"
+            f"**Goal:** {primary_goal.goal or '(none set)'}\n\n"
             f"**Materials:** {len(session_data.materials)}\n\n"
             f"**Curricula:** {len(session_data.curricula)}\n\n"
             f"**Chat Messages:** {sum(len(chat.messages) for chat in session_data.chat_sessions)}\n\n"
@@ -556,7 +622,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
             if isinstance(raw_path, str) and Path(raw_path).exists():
                 lines.append(f"**File:** {Path(raw_path).name}")
             lines.append("Showing the currently selected chunk only.")
-        elif material.source == MaterialSource.OPENSTAX:
+        elif material.source in (MaterialSource.TEXTBOOK, MaterialSource.OPENSTAX):
             source_book_id = material.metadata.get("material_id")
             if isinstance(source_book_id, str):
                 book = openstax_index.get_book(source_book_id)
@@ -568,7 +634,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                 lines.append(f"**Chapter:** {chapter}")
             if section:
                 lines.append(f"**Section:** {section}")
-            lines.append("Showing the retrieved OpenStax chunk instead of rendering the full textbook.")
+            lines.append("Showing the retrieved textbook chunk instead of rendering the full book.")
 
         if material.url:
             lines.append(f"[Open source link]({material.url})")
@@ -893,6 +959,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                 setattr(state, "selected_curriculum_id", None),
                                 setattr(state, "selected_item_id", None),
                                 setattr(state, "selected_material_id", None),
+                                setattr(state, "topic_material_id", None),
                                 clear_status("studio_status", "chat_status"),
                                 topic_panel.refresh(),
                                 learning_panel.refresh(),
@@ -923,16 +990,33 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
 
                         ui.button("Save Topic Background", on_click=save_topic_background).props("outline")
 
+                        goal_input = ui.input(
+                            "Learning Goal",
+                            value=(snapshot.session_data.user_profile.goals[0].goal if snapshot.session_data and snapshot.session_data.user_profile.goals else ""),
+                            placeholder="e.g. pass my biology exam next week",
+                        ).props("outlined").classes("w-full")
+
+                        def save_goal() -> None:
+                            try:
+                                session_data = ensure_session_access(user, state.selected_session_id)
+                                if not session_data:
+                                    raise ValueError("Select a topic first.")
+                                if not session_data.user_profile.goals:
+                                    raise ValueError("No goal to update.")
+                                session_data.user_profile.goals[0].goal = (goal_input.value or "").strip()
+                                session_store.save(session_data.session_id)
+                                set_status("studio_status", "Saved learning goal.")
+                                safe_notify("Learning goal saved.", type="positive")
+                                topic_panel.refresh()
+                            except Exception as exc:
+                                handle_error("studio_status", exc)
+                                topic_panel.refresh()
+
+                        ui.button("Save Learning Goal", on_click=save_goal).props("outline")
+
                         ui.separator()
                         new_topic = ui.input("New Topic", placeholder="Molecular biology foundations").props("outlined").classes("w-full")
-                        new_depth = ui.radio(
-                            {
-                                "introductory": "Introductory",
-                                "comprehensive": "Comprehensive",
-                                "expert": "Expert",
-                            },
-                            value="introductory",
-                        ).props("inline")
+                        new_goal = ui.input("Your Goal (optional)", placeholder="e.g. pass my biology exam").props("outlined").classes("w-full")
 
                         def create_topic() -> None:
                             try:
@@ -940,7 +1024,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                     raise ValueError("Enter a topic name.")
                                 profile = UserProfile(
                                     background=(topic_background.value or "").strip() or user.background or "",
-                                    goals=[LearningGoal(topic=(new_topic.value or "").strip(), depth=new_depth.value)],
+                                    goals=[LearningGoal(topic=(new_topic.value or "").strip(), goal=(new_goal.value or "").strip())],
                                 )
                                 session_store.create(profile)
                                 user_store.add_session(user.id, profile.id)
@@ -968,6 +1052,57 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
 
                         with ui.tab_panels(studio_tabs, value=state.active_studio_tab, keep_alive=True).classes("w-full"):
                             with ui.tab_panel("materials"):
+                                async def _do_gathering(svc, sd, goal) -> None:
+                                    try:
+                                        def on_progress(upd: dict) -> None:
+                                            state.gathering_log.append(format_gathering_log(upd))
+                                            try:
+                                                topic_panel.refresh()
+                                            except RuntimeError:
+                                                pass
+
+                                        materials = await svc.run_gathering(
+                                            profile=sd.user_profile,
+                                            goal_topic=goal.topic,
+                                            goal=goal.goal,
+                                            on_progress=on_progress,
+                                        )
+                                        sd.materials.extend(materials)
+                                        state.gathering_log.append("· Indexing materials into vector store...")
+                                        try:
+                                            topic_panel.refresh()
+                                        except RuntimeError:
+                                            pass
+                                        await svc.index_materials(materials, session_id=sd.session_id)
+                                        task_id = str(uuid.uuid4())
+                                        sd.gathering_tasks[task_id] = {
+                                            "status": "completed",
+                                            "goal_topic": goal.topic,
+                                            "progress": [],
+                                            "materials_count": len(materials),
+                                        }
+                                        session_store.save(sd.session_id)
+                                        state.gathering_log.append(f"✓ Done — {len(materials)} materials added.")
+                                        set_status("studio_status", f"Gathering complete. Added {len(materials)} materials.")
+                                        safe_notify("Material gathering complete.", type="positive")
+                                        try:
+                                            learning_panel.refresh()
+                                        except RuntimeError:
+                                            pass
+                                    except asyncio.CancelledError:
+                                        state.gathering_log.append("✗ Gathering cancelled.")
+                                        set_status("studio_status", "Material gathering cancelled.")
+                                    except Exception as exc:
+                                        state.gathering_log.append(f"✗ Error: {exc}")
+                                        handle_error("studio_status", exc)
+                                    finally:
+                                        state.gathering_running = False
+                                        state.gathering_task_ref = None
+                                        try:
+                                            topic_panel.refresh()
+                                        except RuntimeError:
+                                            pass
+
                                 async def run_gathering() -> None:
                                     try:
                                         session_data = ensure_session_access(user, state.selected_session_id)
@@ -976,31 +1111,41 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                         goal = get_primary_goal(session_data.user_profile)
                                         if not goal:
                                             raise ValueError("Add a learning goal before gathering materials.")
-                                        set_status("studio_status", "Gathering materials...")
-                                        topic_panel.refresh()
-                                        service = build_gathering_service()
-                                        materials = await service.run_gathering(
-                                            profile=session_data.user_profile,
-                                            goal_topic=goal.topic,
-                                            depth=goal.depth,
+                                        for existing_task in session_data.gathering_tasks.values():
+                                            if (
+                                                existing_task.get("status") == "completed"
+                                                and existing_task.get("goal_topic") == goal.topic
+                                            ):
+                                                raise ValueError("Materials already gathered for this topic. Create a new topic to gather again.")
+                                        state.gathering_log = ["Starting material gathering..."]
+                                        state.gathering_running = True
+                                        svc = build_gathering_service()
+                                        state.gathering_task_ref = asyncio.create_task(
+                                            _do_gathering(svc, session_data, goal)
                                         )
-                                        session_data.materials.extend(materials)
-                                        await service.index_materials(materials, session_id=session_data.session_id)
-                                        session_store.save(session_data.session_id)
-                                        set_status("studio_status", f"Gathering complete. Added {len(materials)} materials.")
-                                        safe_notify("Material gathering complete.", type="positive")
                                         topic_panel.refresh()
-                                        learning_panel.refresh()
                                     except Exception as exc:
+                                        state.gathering_running = False
                                         handle_error("studio_status", exc)
                                         topic_panel.refresh()
+
+                                async def cancel_gathering() -> None:
+                                    task = state.gathering_task_ref
+                                    if task:
+                                        task.cancel()
 
                                 with ui.card().classes("panel-card w-full"):
                                     with ui.row(wrap=True).classes("w-full items-center justify-between gap-4"):
                                         with ui.column().classes("gap-1"):
-                                            ui.label("Primary Action").classes("section-label")
-                                            ui.label("Run material gathering before hand-curating sources when you want the system to build the evidence base for the topic.").classes("muted-copy")
-                                        ui.button("Run Material Gathering", on_click=run_gathering, color="primary").props("unelevated")
+                                            ui.label("Material Gathering").classes("section-label")
+                                            ui.label("Searches PDFs, OpenStax, and the web to build the evidence base for this topic.").classes("muted-copy")
+                                        with ui.row().classes("gap-2 items-center"):
+                                            if state.gathering_running:
+                                                ui.button("Gathering…", color="grey").props("unelevated disable")
+                                                ui.button("Cancel", on_click=cancel_gathering, color="negative").props("unelevated outline")
+                                            else:
+                                                ui.button("Run Material Gathering", on_click=run_gathering, color="primary").props("unelevated")
+                                    render_progress_log(state.gathering_log)
 
                                 with ui.row(wrap=True).classes("w-full gap-6 items-start"):
                                     with ui.card().classes("panel-card").style("flex: 1 1 420px; min-width: 320px;"):
@@ -1157,12 +1302,106 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
 
                                 with ui.card().classes("panel-card table-shell"):
                                     ui.label("Current Materials").classes("text-xl font-semibold")
-                                    ui.table(
+                                    ui.label("Click any row to view the full material.").classes("muted-copy")
+                                    materials_table = ui.table(
                                         rows=build_material_rows(snapshot.session_data.materials if snapshot.session_data else []),
                                         columns=TABLE_COLUMNS["materials"],
                                         row_key="id",
                                         pagination=8,
                                     ).props("flat bordered wrap-cells").classes("w-full")
+
+                                    def on_material_row_click(e) -> None:
+                                        row_id = e.args[1].get("id") if e.args and len(e.args) > 1 else None
+                                        state.topic_material_id = None if row_id == state.topic_material_id else row_id
+                                        topic_panel.refresh()
+
+                                    materials_table.on("rowClick", on_material_row_click)
+
+                                if snapshot.session_data and state.topic_material_id:
+                                    selected_mat = next(
+                                        (m for m in snapshot.session_data.materials if m.id == state.topic_material_id),
+                                        None,
+                                    )
+                                    if selected_mat:
+                                        _source_colors = {
+                                            "tavily": "blue-7",
+                                            "pdf_upload": "orange-8",
+                                            "textbook": "green-8",
+                                            "openstax": "green-8",
+                                            "user_upload": "purple-7",
+                                        }
+                                        _src_color = _source_colors.get(selected_mat.source.value, "grey-7")
+                                        _is_pdf_upload = (
+                                            selected_mat.source == MaterialSource.PDF_UPLOAD
+                                            and bool(selected_mat.metadata.get("file_path"))
+                                            and Path(selected_mat.metadata.get("file_path", "")).exists()
+                                        )
+                                        _pdf_path = selected_mat.url or ""
+                                        _is_tavily_pdf = (
+                                            selected_mat.source == MaterialSource.TAVILY
+                                            and _pdf_path.split("?")[0].split("#")[0].lower().endswith(".pdf")
+                                        )
+
+                                        with ui.card().classes("panel-card w-full"):
+                                            with ui.row(wrap=True).classes("w-full items-start gap-3"):
+                                                ui.label(selected_mat.title).classes("text-xl font-semibold flex-1")
+                                                ui.badge(
+                                                    selected_mat.source.value.replace("_", " ").title(),
+                                                    color=_src_color,
+                                                ).props("rounded")
+                                                if selected_mat.relevance_score is not None:
+                                                    ui.badge(
+                                                        f"Relevance {selected_mat.relevance_score:.0f}/5",
+                                                        color="positive",
+                                                    ).props("rounded outline")
+
+                                                def _close_detail() -> None:
+                                                    state.topic_material_id = None
+                                                    topic_panel.refresh()
+
+                                                ui.button(icon="close", on_click=_close_detail).props("flat round dense")
+
+                                            _meta: list[str] = []
+                                            if selected_mat.url:
+                                                _meta.append(f"[Open source]({selected_mat.url})")
+                                            _ch = selected_mat.metadata.get("chapter", "")
+                                            _sec = selected_mat.metadata.get("section", "")
+                                            if _ch:
+                                                _meta.append(f"**Chapter:** {_ch}")
+                                            if _sec:
+                                                _meta.append(f"**Section:** {_sec}")
+                                            if selected_mat.file_name:
+                                                _meta.append(f"**File:** {selected_mat.file_name}")
+                                            if _meta:
+                                                ui.markdown("  ·  ".join(_meta)).classes("muted-copy w-full")
+
+                                            if selected_mat.summary:
+                                                with ui.element("div").classes("summary-strip w-full"):
+                                                    ui.label("Summary").classes("section-label")
+                                                    ui.label(selected_mat.summary).classes("muted-copy")
+
+                                            if _is_pdf_upload:
+                                                _pdf_src = f"/api/materials/file/{snapshot.session_data.session_id}/{selected_mat.id}"
+                                                ui.label("Document").classes("section-label")
+                                                ui.html(
+                                                    f'<iframe src="{html.escape(_pdf_src)}" '
+                                                    f'style="width:100%;height:700px;border:none;border-radius:12px" '
+                                                    f'loading="lazy" title="PDF Document"></iframe>'
+                                                )
+                                            elif _is_tavily_pdf:
+                                                ui.label("Document").classes("section-label")
+                                                ui.html(
+                                                    f'<iframe src="{html.escape(_pdf_path)}" '
+                                                    f'style="width:100%;height:700px;border:none;border-radius:12px" '
+                                                    f'loading="lazy" title="PDF Document"></iframe>'
+                                                )
+                                                ui.label(
+                                                    "If the PDF does not appear, the source may restrict embedding — use the source link instead."
+                                                ).classes("muted-copy")
+                                            else:
+                                                ui.label("Content").classes("section-label")
+                                                with ui.element("div").classes("viewer-pane w-full"):
+                                                    ui.html(f'<pre class="source-pre">{html.escape(truncate_text(selected_mat.content, 20000))}</pre>')
 
                             with ui.tab_panel("curriculum"):
                                 with ui.card().classes("panel-card w-full"):
@@ -1182,6 +1421,48 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                     ).props("outlined").classes("w-full")
                                     curriculum_select.update()
 
+                                    async def _do_curriculum(svc, sd, goal) -> None:
+                                        try:
+                                            def on_progress(upd: dict) -> None:
+                                                state.curriculum_log.append(format_curriculum_log(upd))
+                                                try:
+                                                    topic_panel.refresh()
+                                                except RuntimeError:
+                                                    pass
+
+                                            curriculum = await svc.generate_curriculum(
+                                                profile=sd.user_profile,
+                                                materials=sd.materials,
+                                                goal_topic=goal.topic,
+                                                goal=goal.goal,
+                                                on_progress=on_progress,
+                                            )
+                                            sd.curricula.append(curriculum)
+                                            session_store.save(sd.session_id)
+                                            state.selected_curriculum_id = curriculum.id
+                                            state.selected_item_id = None
+                                            state.selected_material_id = None
+                                            state.curriculum_log.append(f"✓ Done — {len(curriculum.items)} sections ready.")
+                                            set_status("studio_status", f"Generated curriculum with {len(curriculum.items)} sections.")
+                                            safe_notify("Curriculum generated.", type="positive")
+                                            try:
+                                                learning_panel.refresh()
+                                            except RuntimeError:
+                                                pass
+                                        except asyncio.CancelledError:
+                                            state.curriculum_log.append("✗ Generation cancelled.")
+                                            set_status("studio_status", "Curriculum generation cancelled.")
+                                        except Exception as exc:
+                                            state.curriculum_log.append(f"✗ Error: {exc}")
+                                            handle_error("studio_status", exc)
+                                        finally:
+                                            state.curriculum_running = False
+                                            state.curriculum_task_ref = None
+                                            try:
+                                                topic_panel.refresh()
+                                            except RuntimeError:
+                                                pass
+
                                     async def generate_curriculum() -> None:
                                         try:
                                             session_data = ensure_session_access(user, state.selected_session_id)
@@ -1192,28 +1473,31 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                                 raise ValueError("Add a learning goal before generating curriculum.")
                                             if not session_data.materials:
                                                 raise ValueError("Gather or add materials before generating curriculum.")
-                                            set_status("studio_status", "Generating curriculum...")
-                                            topic_panel.refresh()
-                                            curriculum = await build_curriculum_service().generate_curriculum(
-                                                profile=session_data.user_profile,
-                                                materials=session_data.materials,
-                                                goal_topic=goal.topic,
-                                                depth=goal.depth,
+                                            state.curriculum_log = ["Starting curriculum generation..."]
+                                            state.curriculum_running = True
+                                            svc = build_curriculum_service()
+                                            state.curriculum_task_ref = asyncio.create_task(
+                                                _do_curriculum(svc, session_data, goal)
                                             )
-                                            session_data.curricula.append(curriculum)
-                                            session_store.save(session_data.session_id)
-                                            state.selected_curriculum_id = curriculum.id
-                                            state.selected_item_id = None
-                                            state.selected_material_id = None
-                                            set_status("studio_status", f"Generated curriculum with {len(curriculum.items)} sections.")
-                                            safe_notify("Curriculum generated.", type="positive")
                                             topic_panel.refresh()
-                                            learning_panel.refresh()
                                         except Exception as exc:
+                                            state.curriculum_running = False
                                             handle_error("studio_status", exc)
                                             topic_panel.refresh()
 
-                                    ui.button("Generate Curriculum", on_click=generate_curriculum, color="primary").props("unelevated")
+                                    async def cancel_curriculum() -> None:
+                                        task = state.curriculum_task_ref
+                                        if task:
+                                            task.cancel()
+
+                                    with ui.row(wrap=True).classes("w-full items-center justify-between gap-4 mb-2"):
+                                        with ui.row().classes("gap-2 items-center"):
+                                            if state.curriculum_running:
+                                                ui.button("Generating…", color="grey").props("unelevated disable")
+                                                ui.button("Cancel", on_click=cancel_curriculum, color="negative").props("unelevated outline")
+                                            else:
+                                                ui.button("Generate Curriculum", on_click=generate_curriculum, color="primary").props("unelevated")
+                                    render_progress_log(state.curriculum_log)
                                     ui.markdown(format_curriculum_analysis(snapshot.curriculum)).classes("w-full")
                                     ui.table(
                                         rows=build_syllabus_rows(snapshot.curriculum),
@@ -1229,9 +1513,8 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
             with ui.column().classes("w-full gap-4"):
                 render_status(state.chat_status)
                 with ui.row(wrap=True).classes("w-full gap-6 items-start"):
-                    with ui.card().classes("panel-card").style("flex: 1 1 440px; min-width: 320px;"):
+                    with ui.card().classes("panel-card").style("flex: 1 1 380px; min-width: 320px;"):
                         ui.label("Learning Session").classes("text-xl font-semibold")
-                        ui.label("Keep the source excerpt visible while you work through the active section.").classes("muted-copy")
 
                         item_select = ui.select(
                             item_options(snapshot.curriculum),
@@ -1266,12 +1549,18 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                             snapshot.viewer_info or "Select a curriculum section to inspect its source materials."
                         ).classes("w-full")
 
+                        if snapshot.material and snapshot.material.summary:
+                            with ui.element("div").classes("summary-strip w-full"):
+                                ui.label("Summary").classes("section-label")
+                                ui.label(snapshot.material.summary).classes("muted-copy")
+
+                        if snapshot.viewer_text:
+                            ui.label("Excerpt").classes("section-label")
                         with ui.element("div").classes("viewer-pane w-full"):
                             ui.html(f'<pre class="source-pre">{html.escape(snapshot.viewer_text)}</pre>')
 
-                    with ui.card().classes("panel-card").style("flex: 1 1 520px; min-width: 320px;"):
+                    with ui.card().classes("panel-card").style("flex: 1 1 580px; min-width: 320px;"):
                         ui.label("Tutor Chat").classes("text-xl font-semibold")
-                        ui.label("Chat stays on the right so longer sessions still feel anchored to the lesson context.").classes("muted-copy")
                         with ui.scroll_area().classes("chat-scroller"):
                             chat_container = ui.column().classes("w-full gap-3 p-3")
                         render_chat_messages(chat_container, snapshot.chat_history)
@@ -1300,13 +1589,7 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                 if item:
                                     chat_session.active_item_id = item.id
 
-                                rag_context, rag_chunk_ids = await dialogue.build_rag_context(
-                                    profile=session_data.user_profile,
-                                    message=message,
-                                    curriculum=curriculum,
-                                    active_item_id=chat_session.active_item_id,
-                                )
-
+                                # Show user message and clear input immediately
                                 history = serialize_chat(chat_session.messages)
                                 history.append({"role": "user", "content": message})
                                 history.append({"role": "assistant", "content": ""})
@@ -1315,6 +1598,13 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                 chat_input.update()
                                 status_label.set_text("Tutor is responding...")
                                 set_status("chat_status", "Tutor is responding...")
+
+                                rag_context, rag_chunk_ids = await dialogue.build_rag_context(
+                                    profile=session_data.user_profile,
+                                    message=message,
+                                    curriculum=curriculum,
+                                    active_item_id=chat_session.active_item_id,
+                                )
 
                                 async for token in dialogue.chat_stream(
                                     profile=session_data.user_profile,

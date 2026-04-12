@@ -5,6 +5,7 @@ from pathlib import Path
 
 from app.config import LoggingSettings
 from app.models.api_log import APICallLog
+from app.services.metrics import llm_calls, llm_tokens, llm_cost, llm_duration
 
 logger = logging.getLogger("llm_tutor.api_calls")
 
@@ -32,6 +33,17 @@ class APILogger:
         log_file = self._get_log_file()
         with open(log_file, "a") as f:
             f.write(line + "\n")
+
+        model_label = log.model or "unknown"
+        error_label = "true" if log.error else "false"
+        llm_calls.labels(log.module, log.operation, log.service, model_label, error_label).inc()
+        if log.input_tokens:
+            llm_tokens.labels(log.module, log.operation, log.service, model_label, "input").inc(log.input_tokens)
+        if log.output_tokens:
+            llm_tokens.labels(log.module, log.operation, log.service, model_label, "output").inc(log.output_tokens)
+        if log.cost_estimate_usd:
+            llm_cost.labels(log.module, log.operation, log.service, model_label).inc(log.cost_estimate_usd)
+        llm_duration.labels(log.module, log.operation, log.service).observe(log.latency_ms / 1000)
 
         level_str = "ERROR" if log.error else "DEBUG"
         logger.log(

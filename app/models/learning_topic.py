@@ -7,7 +7,7 @@ class LearningTopicSummary(BaseModel):
 
     session_id: str
     topic: str = "Untitled"
-    depth: str = "introductory"
+    goal: str = ""
     extra_goals_count: int = Field(
         default=0,
         description="Legacy sessions may have multiple goals; only goals[0] labels the topic.",

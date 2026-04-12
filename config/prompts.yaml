@@ -10,10 +10,11 @@ gathering:
       Learner background:
       {background}
 
-      Learning goal: {goal_topic} (depth: {depth})
+      Learning topic: {goal_topic}
+      Learner's specific goal: {goal}
 
       Extract 5-10 one-line hooks about this learner relevant to finding
-      appropriately-leveled learning materials.
+      learning materials that address their specific goal.
 
   generate_queries:
     system: |
@@ -26,14 +27,14 @@ gathering:
       Example: {{"queries": ["query 1", "query 2", ...]}}
     user: |
       Topic: {goal_topic}
-      Desired depth: {depth}
+      Learner's goal: {goal}
 
       Learner hooks:
       {hooks}
 
       Generate {num_queries} diverse search queries for finding educational materials.
       Mix broad and specific queries. Include queries targeting different sub-aspects
-      of the topic.
+      of the topic that are most relevant to the learner's stated goal.
 
   score_relevance:
     system: |
@@ -82,13 +83,16 @@ curriculum:
     user: |
       Topic: {goal_topic}
       Learner background: {background_summary}
-      Learning depth: {depth}
+      Learner's goal: {goal}
 
       Available material summaries:
       {material_summaries}
 
-      Identify the core concepts (max {max_concepts}) needed to learn this topic at
-      the specified depth. Consider what the learner already knows from their background.
+      Identify only the essential concepts (max {max_concepts}) the learner needs to
+      achieve their specific goal — not a complete survey of the topic. Err on the side
+      of fewer concepts. A focused plan of 3-5 concepts is better than an exhaustive
+      10-concept course. Consider what the learner already knows from their background
+      and skip foundational concepts they've already mastered.
 
   design:
     system: |
@@ -105,16 +109,14 @@ curriculum:
       Concepts (with IDs):
       {concepts_json}
 
-      Learning depth: {depth}
+      Learner's goal: {goal}
 
       Material summaries:
       {material_summaries}
 
       For each concept, generate 1-{max_objectives_per_concept} learning objectives.
-      Match objective challenge and scope to the depth:
-      - introductory: focus on fundamentals and core understanding
-      - comprehensive: include practical application and intermediate analysis
-      - expert: include advanced synthesis, critique, and design-level mastery
+      Calibrate challenge and scope to match the learner's stated goal.
+      Only include objectives directly relevant to achieving that goal.
 
   develop:
     system: |
@@ -131,34 +133,36 @@ curriculum:
       Learning objectives (with IDs):
       {objectives_json}
 
-      Learning depth: {depth}
+      Learner's goal: {goal}
 
       Available materials (with IDs and summaries):
       {materials_with_ids}
 
-      Create ordered curriculum items for optimal learning progression.
-      Depth requirements:
-      - introductory: smaller conceptual jumps, more scaffolding in outlines
-      - comprehensive: balanced progression with application-focused outlines
-      - expert: faster progression, deeper technical detail, and advanced integration
+      Create ordered curriculum items for optimal learning progression toward the
+      learner's goal. Aim for 4-8 sections total — a concise, actionable study plan
+      is far more useful than a comprehensive one. Each item should cover one clear
+      concept or skill. Do not pad with extra items. Only reference materials directly
+      relevant to each item's learning objective; leave out anything that doesn't serve it.
 
 dialogue:
   socratic_system: |
-    You are a Socratic tutor. Your role is to guide the learner to understanding
-    through carefully crafted questions rather than direct answers.
+    You are a Socratic tutor. Your primary approach is to guide the learner through
+    questions rather than direct answers — but you are also a helpful teacher, not
+    a gatekeeper.
 
     GUIDELINES:
-    - Never give the answer directly. Ask probing questions that lead the learner
-      to discover the answer themselves.
+    - Prefer guiding questions over direct answers. Ask probing questions that help
+      the learner reason through the problem themselves.
     - Start with what the learner already knows and build from there.
-    - If the learner is stuck, break the problem into smaller pieces and ask
-      about those.
+    - If the learner is stuck or has already made a genuine attempt, you may give
+      a clearer explanation or a worked example — don't make them beg for it.
     - Use analogies connected to the learner's background when possible.
     - Celebrate correct reasoning. Gently redirect incorrect reasoning by asking
       questions that expose the contradiction.
-    - If the learner explicitly asks "just tell me the answer", provide a hint
-      first. Only give a direct explanation if they insist a second time.
-    - Keep responses concise: 2-4 sentences plus a guiding question.
+    - If the learner explicitly asks for a direct explanation or says they're stuck,
+      provide one clearly and concisely.
+    - Keep responses concise: 2-4 sentences plus a guiding question (or a direct
+      explanation when that's what the learner needs).
     - When introducing a new concept, connect it to something the learner
       already understands.
 

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from collections.abc import Callable
 from uuid import uuid4
 
@@ -12,6 +13,10 @@ from app.services.vector_store import VectorStoreService
 from app.config import GatheringSettings
 
 logger = logging.getLogger("llm_tutor.gathering")
+
+# Only numbered subsections (e.g. "1.1", "3.2", "4") are substantive chapter
+# content.  "Introduction", "Key Terms", "Summary", etc. are excluded.
+_CONTENT_SECTION_RE = re.compile(r"^\d+(\.\d+)?$")
 
 
 class GatheringService:
@@ -36,7 +41,7 @@ class GatheringService:
             {
                 "background": profile.background or "No background provided",
                 "goal_topic": goal.topic if goal else "General",
-                "depth": goal.depth if goal else "introductory",
+                "goal": goal.goal if goal else "",
             },
         )
         response = await self.llm.completion(
@@ -46,7 +51,7 @@ class GatheringService:
         return hooks
 
     async def generate_queries(
-        self, topic: str, depth: str, hooks: list[str], num_queries: int | None = None,
+        self, topic: str, goal: str, hooks: list[str], num_queries: int | None = None,
     ) -> list[str]:
         if num_queries is None:
             num_queries = self.settings.queries_per_iteration
@@ -54,7 +59,7 @@ class GatheringService:
             "gathering", "generate_queries",
             {
                 "goal_topic": topic,
-                "depth": depth,
+                "goal": goal,
                 "hooks": "\n".join(hooks),
                 "num_queries": str(num_queries),
             },
@@ -138,7 +143,7 @@ class GatheringService:
         self,
         profile: UserProfile,
         goal_topic: str,
-        depth: str = "introductory",
+        goal: str = "",
         on_progress: Callable | None = None,
     ) -> list[Material]:
         """Run the full gathering pipeline with iterative refinement."""
@@ -155,7 +160,7 @@ class GatheringService:
         if self.vector_store:
             try:
                 initial_queries = await self.generate_queries(
-                    topic=goal_topic, depth=depth, hooks=hooks,
+                    topic=goal_topic, goal=goal, hooks=hooks,
                 )
                 pdf_chunks_seen: set[str] = set()
                 for query in initial_queries[:3]:
@@ -167,9 +172,12 @@ class GatheringService:
                         if chunk_id in pdf_chunks_seen:
                             continue
                         pdf_chunks_seen.add(chunk_id)
+                        _ch = (r["metadata"].get("chapter") or "").strip()
+                        _sec = (r["metadata"].get("section") or "").strip()
+                        _title = " — ".join(part for part in [_ch, _sec] if part) or "PDF excerpt"
                         material = Material(
                             source=MaterialSource.PDF_UPLOAD,
-                            title=r["metadata"].get("section") or r["metadata"].get("chapter") or "PDF excerpt",
+                            title=_title,
                             content=r["content"],
                             metadata=r["metadata"],
                         )
@@ -190,7 +198,7 @@ class GatheringService:
             try:
                 if not initial_queries:
                     initial_queries = await self.generate_queries(
-                        topic=goal_topic, depth=depth, hooks=hooks,
+                        topic=goal_topic, goal=goal, hooks=hooks,
                     )
                 openstax_chunks_seen: set[str] = set()
                 for query in initial_queries[:3]:
@@ -203,9 +211,15 @@ class GatheringService:
                         if chunk_id in openstax_chunks_seen:
                             continue
                         openstax_chunks_seen.add(chunk_id)
+                        _sec = (r["metadata"].get("section") or "").strip()
+                        if not _CONTENT_SECTION_RE.match(_sec):
+                            logger.debug("Skipping non-content OpenStax section: %r", _sec)
+                            continue
+                        _ch = (r["metadata"].get("chapter") or "").strip()
+                        _title = " — ".join(part for part in [_ch, _sec] if part) or "OpenStax excerpt"
                         material = Material(
-                            source=MaterialSource.OPENSTAX,
-                            title=r["metadata"].get("section") or r["metadata"].get("chapter") or "OpenStax excerpt",
+                            source=MaterialSource.TEXTBOOK,
+                            title=_title,
                             content=r["content"],
                             metadata=r["metadata"],
                         )
@@ -225,7 +239,7 @@ class GatheringService:
             if len(all_materials) >= self.settings.max_materials:
                 break
 
-            queries = await self.generate_queries(topic=goal_topic, depth=depth, hooks=hooks)
+            queries = await self.generate_queries(topic=goal_topic, goal=goal, hooks=hooks)
             if on_progress:
                 on_progress({"stage": "queries_generated", "iteration": iteration, "queries": queries})
 
@@ -281,7 +295,7 @@ class GatheringService:
         chunks: list[MaterialChunk] = []
         for material in materials:
             # Skip PDF and OpenStax materials — already indexed
-            if material.source in (MaterialSource.PDF_UPLOAD, MaterialSource.OPENSTAX):
+            if material.source in (MaterialSource.PDF_UPLOAD, MaterialSource.TEXTBOOK, MaterialSource.OPENSTAX):
                 continue
 
             paragraphs = [p.strip() for p in material.content.split("\n\n") if p.strip()]

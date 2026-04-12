@@ -24,7 +24,7 @@ router = APIRouter(prefix="/api/gathering", tags=["gathering"])
 class GatheringStartRequest(BaseModel):
     session_id: str
     goal_topic: str | None = None
-    depth: str = "introductory"
+    goal: str = ""
 
 
 def _get_gathering_service(
@@ -59,6 +59,16 @@ async def start_gathering(
     if not goal_topic:
         raise HTTPException(status_code=400, detail="No learning goal specified")
 
+    for existing_task in session_data.gathering_tasks.values():
+        if (
+            existing_task.get("status") == "completed"
+            and existing_task.get("goal_topic") == goal_topic
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Materials already gathered for this topic. Create a new topic to gather again.",
+            )
+
     task_id = str(uuid4())
     session_data.gathering_tasks[task_id] = {
         "status": "running",
@@ -70,7 +80,7 @@ async def start_gathering(
 
     background_tasks.add_task(
         _run_gathering_task,
-        service, store, request.session_id, task_id, goal_topic, request.depth,
+        service, store, request.session_id, task_id, goal_topic, request.goal,
     )
 
     return {"task_id": task_id, "status": "started"}
@@ -82,7 +92,7 @@ async def _run_gathering_task(
     session_id: str,
     task_id: str,
     goal_topic: str,
-    depth: str,
+    goal: str,
 ):
     session_data = store.get(session_id)
     if not session_data:
@@ -99,7 +109,7 @@ async def _run_gathering_task(
         materials = await service.run_gathering(
             profile=session_data.user_profile,
             goal_topic=goal_topic,
-            depth=depth,
+            goal=goal,
             on_progress=on_progress,
         )
         session_data.materials.extend(materials)

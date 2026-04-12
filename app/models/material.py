@@ -6,7 +6,8 @@ from uuid import uuid4
 
 class MaterialSource(str, Enum):
     TAVILY = "tavily"
-    OPENSTAX = "openstax"
+    TEXTBOOK = "textbook"
+    OPENSTAX = "openstax"  # deprecated alias — kept for backwards-compat with stored sessions
     PDF_UPLOAD = "pdf_upload"
     USER_UPLOAD = "user_upload"
 

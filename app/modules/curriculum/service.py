@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+from collections.abc import Callable
 
 from app.models.curriculum import Concept, LearningObjective, CurriculumItem, Curriculum
 from app.utils.json_parse import extract_json
@@ -49,14 +50,15 @@ class CurriculumService:
                 ranked.append((overlap, material.id))
 
         ranked.sort(reverse=True)
-        return [material_id for _, material_id in ranked[:3]]
+        return [material_id for _, material_id in ranked[:4]]
 
     async def generate_curriculum(
         self,
         profile: UserProfile,
         materials: list[Material],
         goal_topic: str,
-        depth: str = "introductory",
+        goal: str = "",
+        on_progress: Callable | None = None,
     ) -> Curriculum:
         material_summaries = "\n".join(
             f"- [{m.id[:8]}] {m.title}: {m.summary or m.content[:200]}"
@@ -66,16 +68,22 @@ class CurriculumService:
 
         # Step 1: Analyse — extract concepts
         concepts = await self._analyse(
-            goal_topic, background_summary, depth, material_summaries, profile.id
+            goal_topic, background_summary, goal, material_summaries, profile.id
         )
+        if on_progress:
+            on_progress({"stage": "analyse_complete", "concepts_count": len(concepts)})
 
         # Step 2: Design — generate objectives
-        objectives = await self._design(concepts, material_summaries, depth, profile.id)
+        objectives = await self._design(concepts, material_summaries, goal, profile.id)
+        if on_progress:
+            on_progress({"stage": "design_complete", "objectives_count": len(objectives)})
 
         # Step 3: Develop — create curriculum items
         items = await self._develop(
-            objectives, materials, material_summaries, depth, profile.id
+            objectives, materials, material_summaries, goal, profile.id
         )
+        if on_progress:
+            on_progress({"stage": "develop_complete", "items_count": len(items)})
 
         curriculum = Curriculum(
             user_id=profile.id,
@@ -90,7 +98,7 @@ class CurriculumService:
         self,
         goal_topic: str,
         background_summary: str,
-        depth: str,
+        goal: str,
         material_summaries: str,
         session_id: str,
     ) -> list[Concept]:
@@ -99,7 +107,7 @@ class CurriculumService:
             {
                 "goal_topic": goal_topic,
                 "background_summary": background_summary,
-                "depth": depth,
+                "goal": goal,
                 "material_summaries": material_summaries,
                 "max_concepts": str(self.settings.max_concepts),
             },
@@ -127,7 +135,7 @@ class CurriculumService:
         self,
         concepts: list[Concept],
         material_summaries: str,
-        depth: str,
+        goal: str,
         session_id: str,
     ) -> list[LearningObjective]:
         concepts_json = json.dumps(
@@ -139,7 +147,7 @@ class CurriculumService:
             {
                 "concepts_json": concepts_json,
                 "material_summaries": material_summaries,
-                "depth": depth,
+                "goal": goal,
                 "max_objectives_per_concept": str(self.settings.max_objectives_per_concept),
             },
         )
@@ -167,7 +175,7 @@ class CurriculumService:
         objectives: list[LearningObjective],
         materials: list[Material],
         material_summaries: str,
-        depth: str,
+        goal: str,
         session_id: str,
     ) -> list[CurriculumItem]:
         objectives_json = json.dumps(
@@ -185,7 +193,7 @@ class CurriculumService:
             {
                 "objectives_json": objectives_json,
                 "materials_with_ids": materials_with_ids,
-                "depth": depth,
+                "goal": goal,
             },
         )
         response = await self.llm.completion(
