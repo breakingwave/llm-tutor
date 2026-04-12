@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.models.account import UserAccount
@@ -186,6 +187,39 @@ async def delete_pdf(
     store.save(session_id)
 
     return {"status": "deleted", "material_id": material_id}
+
+
+@router.get("/file/{session_id}/{material_id}")
+async def serve_material_file(
+    session_id: str,
+    material_id: str,
+    store: SessionStore = Depends(get_session_store),
+    user: UserAccount = Depends(get_current_user),
+):
+    """Serve a locally uploaded PDF file for inline viewing."""
+    if session_id not in user.session_ids and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    session_data = store.get(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    material = next((m for m in session_data.materials if m.id == material_id), None)
+    if not material:
+        raise HTTPException(status_code=404, detail="Material not found")
+
+    if material.source != MaterialSource.PDF_UPLOAD:
+        raise HTTPException(status_code=400, detail="Material is not an uploaded PDF")
+
+    file_path = material.metadata.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="PDF file not found on server")
+
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=material.file_name or "document.pdf",
+    )
 
 
 class AddManualMaterialRequest(BaseModel):

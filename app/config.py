@@ -77,8 +77,8 @@ class GatheringSettings(BaseModel):
 
 
 class CurriculumSettings(BaseModel):
-    max_concepts: int = 10
-    max_objectives_per_concept: int = 3
+    max_concepts: int = 5
+    max_objectives_per_concept: int = 2
     chunk_size: int = 512
     chunk_overlap: int = 50
 

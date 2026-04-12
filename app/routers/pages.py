@@ -14,16 +14,20 @@ router = APIRouter(tags=["pages"])
 class OnboardingForm(BaseModel):
     background: str = ""
     goal_topic: str = ""
-    goal_depth: str = "introductory"
+    goal: str = ""
 
 
 class BackgroundUpdate(BaseModel):
     background: str
 
 
+class GoalUpdate(BaseModel):
+    goal: str
+
+
 class AddGoalForm(BaseModel):
     topic: str
-    depth: str = "introductory"
+    goal: str = ""
 
 
 @router.get("/api/sessions/topics")
@@ -42,15 +46,15 @@ async def list_learning_topics(
         if goals:
             g0 = goals[0]
             topic = g0.topic or "Untitled"
-            depth = g0.depth or "introductory"
+            goal = g0.goal or ""
             extra = max(0, len(goals) - 1)
         else:
-            topic, depth, extra = "Untitled", "introductory", 0
+            topic, goal, extra = "Untitled", "", 0
         summaries.append(
             LearningTopicSummary(
                 session_id=sid,
                 topic=topic,
-                depth=depth,
+                goal=goal,
                 extra_goals_count=extra,
                 created_at=profile.created_at,
             )
@@ -74,7 +78,7 @@ async def create_session(
         background = user.background or ""
     profile = UserProfile(
         background=background,
-        goals=[LearningGoal(topic=form.goal_topic, depth=form.goal_depth)]
+        goals=[LearningGoal(topic=form.goal_topic, goal=form.goal)]
         if form.goal_topic
         else [],
     )
@@ -115,6 +119,25 @@ async def update_background(
     return {"status": "updated"}
 
 
+@router.put("/api/sessions/{session_id}/goal")
+async def update_goal(
+    session_id: str,
+    update: GoalUpdate,
+    store: SessionStore = Depends(get_session_store),
+    user: UserAccount = Depends(get_current_user),
+):
+    if session_id not in user.session_ids and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    session_data = store.get(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if not session_data.user_profile.goals:
+        raise HTTPException(status_code=400, detail="No goal to update")
+    session_data.user_profile.goals[0].goal = update.goal
+    store.save(session_id)
+    return {"status": "updated"}
+
+
 @router.post("/api/sessions/{session_id}/goals")
 async def add_goal(
     session_id: str,
@@ -128,7 +151,7 @@ async def add_goal(
     if not session_data:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    goal = LearningGoal(topic=form.topic, depth=form.depth)
+    goal = LearningGoal(topic=form.topic, goal=form.goal)
     session_data.user_profile.goals.append(goal)
     store.save(session_id)
     return {"status": "added", "goals": [g.model_dump() for g in session_data.user_profile.goals]}

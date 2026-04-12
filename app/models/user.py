@@ -5,7 +5,7 @@ from uuid import uuid4
 
 class LearningGoal(BaseModel):
     topic: str
-    depth: str = "introductory"
+    goal: str = ""
     specific_interests: list[str] = Field(default_factory=list)
 
 
