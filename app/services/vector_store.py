@@ -46,7 +46,9 @@ class VectorStoreService:
         self._openai_client: openai.OpenAI | None = None
 
         if qdrant_settings.path:
-            self.client = QdrantClient(path=qdrant_settings.path)
+            abs_path = os.path.abspath(qdrant_settings.path)
+            logger.info("Opening Qdrant at: %s", abs_path)
+            self.client = QdrantClient(path=abs_path)
         elif qdrant_settings.mode == "memory":
             self.client = QdrantClient(location=":memory:")
         else:
@@ -59,6 +61,11 @@ class VectorStoreService:
         self._bm25: dict[str, dict] = {}
 
         self._ensure_collection(self.settings.collection_name)
+
+        # Log collection stats at startup
+        for col_info in self.client.get_collections().collections:
+            info = self.client.get_collection(col_info.name)
+            logger.info("Collection '%s': %d points", col_info.name, info.points_count)
 
     def _ensure_collection(self, collection_name: str) -> None:
         """Create collection with dense + sparse named vectors if not exists."""
@@ -253,7 +260,13 @@ class VectorStoreService:
 
         try:
             # Embed query
+            col_info = self.client.get_collection(col)
+            logger.info(
+                "query_hybrid: collection=%s points=%d query=%s",
+                col, col_info.points_count, query_text[:80],
+            )
             dense_vec = (await self._embed_dense([query_text]))[0]
+            logger.info("query_hybrid: dense_vec len=%d, first_5=%s", len(dense_vec), dense_vec[:5])
             sparse_vec = self._build_sparse(query_text, col)
 
             # Build session filter for per-user collections (not shared ones)
@@ -268,16 +281,18 @@ class VectorStoreService:
                     ],
                 )
 
-            # Hybrid query with prefetch + RRF
-            response = self.client.query_points(
-                collection_name=col,
-                prefetch=[
-                    models.Prefetch(
-                        query=dense_vec,
-                        using=DENSE_VECTOR_NAME,
-                        limit=top_k * 2,
-                        filter=query_filter,
-                    ),
+            # Build prefetch list — skip sparse when BM25 state is empty
+            # (happens after server restart since BM25 vocab is in-memory only)
+            prefetches = [
+                models.Prefetch(
+                    query=dense_vec,
+                    using=DENSE_VECTOR_NAME,
+                    limit=top_k * 2,
+                    filter=query_filter,
+                ),
+            ]
+            if sparse_vec.indices:
+                prefetches.append(
                     models.Prefetch(
                         query=models.SparseVector(
                             indices=sparse_vec.indices,
@@ -287,10 +302,24 @@ class VectorStoreService:
                         limit=top_k * 2,
                         filter=query_filter,
                     ),
-                ],
-                query=models.FusionQuery(fusion=models.Fusion.RRF),
-                limit=top_k,
-            )
+                )
+
+            if len(prefetches) > 1:
+                response = self.client.query_points(
+                    collection_name=col,
+                    prefetch=prefetches,
+                    query=models.FusionQuery(fusion=models.Fusion.RRF),
+                    limit=top_k,
+                )
+            else:
+                # Dense-only search (no fusion needed with single prefetch)
+                response = self.client.query_points(
+                    collection_name=col,
+                    query=dense_vec,
+                    using=DENSE_VECTOR_NAME,
+                    limit=top_k,
+                    query_filter=query_filter,
+                )
 
             for point in response.points:
                 payload = point.payload or {}
