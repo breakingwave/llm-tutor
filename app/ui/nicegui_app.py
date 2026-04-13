@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -1040,7 +1041,43 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                 handle_error("studio_status", exc)
                                 topic_panel.refresh()
 
-                        ui.button("Create Topic", on_click=create_topic, color="primary").props("unelevated")
+                        with ui.row().classes("w-full gap-2"):
+                            ui.button("Create Topic", on_click=create_topic, color="primary").props("unelevated")
+
+                        if state.selected_session_id:
+                            ui.separator()
+
+                            async def delete_topic() -> None:
+                                try:
+                                    sid = state.selected_session_id
+                                    session_data = ensure_session_access(user, sid)
+                                    if not session_data:
+                                        raise ValueError("No topic selected.")
+                                    # Delete Qdrant vectors for all materials
+                                    for material in session_data.materials:
+                                        await vector_store.delete_by_material_id(material.id, session_id=sid)
+                                    # Delete uploaded files
+                                    uploads_dir = Path(settings.pdf.upload_dir) / sid
+                                    if uploads_dir.exists() and uploads_dir.is_dir():
+                                        shutil.rmtree(uploads_dir, ignore_errors=True)
+                                    # Delete session data
+                                    session_store.delete(sid)
+                                    user_store.remove_session(user.id, sid)
+                                    # Reset UI state
+                                    state.selected_session_id = None
+                                    state.selected_curriculum_id = None
+                                    state.selected_item_id = None
+                                    state.selected_material_id = None
+                                    state.topic_material_id = None
+                                    set_status("studio_status", "Topic deleted.")
+                                    safe_notify("Topic deleted.", type="warning")
+                                    topic_panel.refresh()
+                                    learning_panel.refresh()
+                                except Exception as exc:
+                                    handle_error("studio_status", exc)
+                                    topic_panel.refresh()
+
+                            ui.button("Delete Topic", on_click=delete_topic, color="negative").props("outline")
 
                     with ui.column().classes("gap-6").style("flex: 2 1 760px; min-width: 320px;"):
                         with ui.tabs(
@@ -1111,12 +1148,26 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                         goal = get_primary_goal(session_data.user_profile)
                                         if not goal:
                                             raise ValueError("Add a learning goal before gathering materials.")
-                                        for existing_task in session_data.gathering_tasks.values():
-                                            if (
-                                                existing_task.get("status") == "completed"
-                                                and existing_task.get("goal_topic") == goal.topic
-                                            ):
-                                                raise ValueError("Materials already gathered for this topic. Create a new topic to gather again.")
+                                        # Clear previous gathered (non-uploaded) materials for re-gather
+                                        has_previous = any(
+                                            t.get("status") == "completed" and t.get("goal_topic") == goal.topic
+                                            for t in session_data.gathering_tasks.values()
+                                        )
+                                        if has_previous:
+                                            keep = []
+                                            for m in session_data.materials:
+                                                if m.source in (MaterialSource.PDF_UPLOAD, MaterialSource.USER_UPLOAD):
+                                                    keep.append(m)
+                                                else:
+                                                    await vector_store.delete_by_material_id(
+                                                        m.id, session_id=session_data.session_id,
+                                                    )
+                                            session_data.materials = keep
+                                            session_data.gathering_tasks = {
+                                                k: v for k, v in session_data.gathering_tasks.items()
+                                                if not (v.get("status") == "completed" and v.get("goal_topic") == goal.topic)
+                                            }
+                                            session_store.save(session_data.session_id)
                                         state.gathering_log = ["Starting material gathering..."]
                                         state.gathering_running = True
                                         svc = build_gathering_service()
@@ -1144,7 +1195,12 @@ def init_nicegui(fastapi_app: FastAPI) -> None:
                                                 ui.button("Gathering…", color="grey").props("unelevated disable")
                                                 ui.button("Cancel", on_click=cancel_gathering, color="negative").props("unelevated outline")
                                             else:
-                                                ui.button("Run Material Gathering", on_click=run_gathering, color="primary").props("unelevated")
+                                                has_gathered = snapshot.session_data and any(
+                                                    t.get("status") == "completed"
+                                                    for t in snapshot.session_data.gathering_tasks.values()
+                                                )
+                                                btn_label = "Re-Gather Materials" if has_gathered else "Run Material Gathering"
+                                                ui.button(btn_label, on_click=run_gathering, color="primary").props("unelevated")
                                     render_progress_log(state.gathering_log)
 
                                 with ui.row(wrap=True).classes("w-full gap-6 items-start"):

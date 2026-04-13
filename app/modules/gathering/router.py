@@ -59,15 +59,25 @@ async def start_gathering(
     if not goal_topic:
         raise HTTPException(status_code=400, detail="No learning goal specified")
 
-    for existing_task in session_data.gathering_tasks.values():
-        if (
-            existing_task.get("status") == "completed"
-            and existing_task.get("goal_topic") == goal_topic
-        ):
-            raise HTTPException(
-                status_code=409,
-                detail="Materials already gathered for this topic. Create a new topic to gather again.",
-            )
+    # Clear previous gathered materials if re-gathering
+    has_previous = any(
+        t.get("status") == "completed" and t.get("goal_topic") == goal_topic
+        for t in session_data.gathering_tasks.values()
+    )
+    if has_previous:
+        vector_store = get_vector_store_service()
+        keep = []
+        for m in session_data.materials:
+            if m.source in ("pdf_upload", "user_upload"):
+                keep.append(m)
+            else:
+                await vector_store.delete_by_material_id(m.id, session_id=request.session_id)
+        session_data.materials = keep
+        session_data.gathering_tasks = {
+            k: v for k, v in session_data.gathering_tasks.items()
+            if not (v.get("status") == "completed" and v.get("goal_topic") == goal_topic)
+        }
+        store.save(request.session_id)
 
     task_id = str(uuid4())
     session_data.gathering_tasks[task_id] = {
