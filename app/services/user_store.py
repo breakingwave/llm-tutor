@@ -62,6 +62,12 @@ class UserStore:
             user.session_ids.append(session_id)
             self.save()
 
+    def remove_session(self, user_id: str, session_id: str) -> None:
+        user = self._users.get(user_id)
+        if user and session_id in user.session_ids:
+            user.session_ids.remove(session_id)
+            self.save()
+
     def update_upload_bytes(self, user_id: str, delta_bytes: int) -> None:
         user = self._users.get(user_id)
         if user:

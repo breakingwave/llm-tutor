@@ -16,7 +16,7 @@ logger = logging.getLogger("llm_tutor.gathering")
 
 # Only numbered subsections (e.g. "1.1", "3.2", "4") are substantive chapter
 # content.  "Introduction", "Key Terms", "Summary", etc. are excluded.
-_CONTENT_SECTION_RE = re.compile(r"^\d+(\.\d+)?$")
+_CONTENT_SECTION_RE = re.compile(r"^\d+(\.\d+)?\b")
 
 
 class GatheringService:

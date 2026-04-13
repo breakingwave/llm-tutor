@@ -1,12 +1,23 @@
+import shutil
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.models.account import UserAccount
 from app.models.learning_topic import LearningTopicSummary
 from app.models.user import UserProfile, LearningGoal
+from app.config import Settings
 from app.services.session_store import SessionStore
 from app.services.user_store import UserStore
-from app.dependencies import get_session_store, get_current_user, get_user_store
+from app.services.vector_store import VectorStoreService
+from app.dependencies import (
+    get_session_store,
+    get_current_user,
+    get_settings,
+    get_user_store,
+    get_vector_store_service,
+)
 
 router = APIRouter(tags=["pages"])
 
@@ -177,3 +188,30 @@ async def remove_goal(
     goals.pop(goal_index)
     store.save(session_id)
     return {"status": "removed", "goals": [g.model_dump() for g in goals]}
+
+
+@router.delete("/api/sessions/{session_id}")
+async def delete_session(
+    session_id: str,
+    store: SessionStore = Depends(get_session_store),
+    user: UserAccount = Depends(get_current_user),
+    user_store: UserStore = Depends(get_user_store),
+    vector_store: VectorStoreService = Depends(get_vector_store_service),
+    settings: Settings = Depends(get_settings),
+):
+    if session_id not in user.session_ids and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Access denied")
+    session_data = store.get(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    for material in session_data.materials:
+        await vector_store.delete_by_material_id(material.id, session_id=session_id)
+
+    uploads_dir = Path(settings.pdf.upload_dir) / session_id
+    if uploads_dir.exists() and uploads_dir.is_dir():
+        shutil.rmtree(uploads_dir, ignore_errors=True)
+
+    store.delete(session_id)
+    user_store.remove_session(user.id, session_id)
+    return {"status": "deleted", "session_id": session_id}

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import logging
 import math
@@ -100,8 +101,8 @@ class VectorStoreService:
         self._openai_client = openai.OpenAI(api_key=key)
         return self._openai_client
 
-    def _embed_dense(self, texts: list[str]) -> list[list[float]]:
-        """Embed texts via OpenAI embeddings API (batched)."""
+    def _embed_dense_sync(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts via OpenAI embeddings API (batched). Synchronous."""
         all_embeddings: list[list[float]] = []
         batch_size = 100
         for i in range(0, len(texts), batch_size):
@@ -112,6 +113,10 @@ class VectorStoreService:
             )
             all_embeddings.extend([d.embedding for d in response.data])
         return all_embeddings
+
+    async def _embed_dense(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts without blocking the event loop."""
+        return await asyncio.to_thread(self._embed_dense_sync, texts)
 
     def _fit_bm25(self, texts: list[str], collection_name: str) -> None:
         """Update BM25 vocabulary with new documents for a collection."""
@@ -183,7 +188,7 @@ class VectorStoreService:
             self._fit_bm25(texts, col)
 
             # Compute embeddings
-            dense_vectors = self._embed_dense(texts)
+            dense_vectors = await self._embed_dense(texts)
             sparse_vectors = [self._build_sparse(t, col) for t in texts]
 
             # Build points
@@ -210,7 +215,8 @@ class VectorStoreService:
             # Upsert in batches
             batch_size = 100
             for i in range(0, len(points), batch_size):
-                self.client.upsert(
+                await asyncio.to_thread(
+                    self.client.upsert,
                     collection_name=col,
                     points=points[i : i + batch_size],
                 )
@@ -248,7 +254,7 @@ class VectorStoreService:
 
         try:
             # Embed query
-            dense_vec = self._embed_dense([query_text])[0]
+            dense_vec = (await self._embed_dense([query_text]))[0]
             sparse_vec = self._build_sparse(query_text, col)
 
             # Build session filter for per-user collections (not shared ones)
@@ -264,7 +270,8 @@ class VectorStoreService:
                 )
 
             # Hybrid query with prefetch + RRF
-            response = self.client.query_points(
+            response = await asyncio.to_thread(
+                self.client.query_points,
                 collection_name=col,
                 prefetch=[
                     models.Prefetch(
@@ -330,7 +337,8 @@ class VectorStoreService:
         error_str = None
 
         try:
-            self.client.delete(
+            await asyncio.to_thread(
+                self.client.delete,
                 collection_name=col,
                 points_selector=models.FilterSelector(
                     filter=models.Filter(
