@@ -215,8 +215,7 @@ class VectorStoreService:
             # Upsert in batches
             batch_size = 100
             for i in range(0, len(points), batch_size):
-                await asyncio.to_thread(
-                    self.client.upsert,
+                self.client.upsert(
                     collection_name=col,
                     points=points[i : i + batch_size],
                 )
@@ -270,8 +269,7 @@ class VectorStoreService:
                 )
 
             # Hybrid query with prefetch + RRF
-            response = await asyncio.to_thread(
-                self.client.query_points,
+            response = self.client.query_points(
                 collection_name=col,
                 prefetch=[
                     models.Prefetch(
@@ -337,8 +335,7 @@ class VectorStoreService:
         error_str = None
 
         try:
-            await asyncio.to_thread(
-                self.client.delete,
+            self.client.delete(
                 collection_name=col,
                 points_selector=models.FilterSelector(
                     filter=models.Filter(
