@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 from collections.abc import Callable
 from uuid import uuid4
 
@@ -13,10 +12,6 @@ from app.services.vector_store import VectorStoreService
 from app.config import GatheringSettings
 
 logger = logging.getLogger("llm_tutor.gathering")
-
-# Only numbered subsections (e.g. "1.1", "3.2", "4") are substantive chapter
-# content.  "Introduction", "Key Terms", "Summary", etc. are excluded.
-_CONTENT_SECTION_RE = re.compile(r"^\d+(\.\d+)?\b")
 
 
 class GatheringService:
@@ -211,11 +206,8 @@ class GatheringService:
                         if chunk_id in openstax_chunks_seen:
                             continue
                         openstax_chunks_seen.add(chunk_id)
-                        _sec = (r["metadata"].get("section") or "").strip()
-                        if not _CONTENT_SECTION_RE.match(_sec):
-                            logger.debug("Skipping non-content OpenStax section: %r", _sec)
-                            continue
                         _ch = (r["metadata"].get("chapter") or "").strip()
+                        _sec = (r["metadata"].get("section") or "").strip()
                         _title = " — ".join(part for part in [_ch, _sec] if part) or "OpenStax excerpt"
                         material = Material(
                             source=MaterialSource.TEXTBOOK,
