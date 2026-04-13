@@ -47,7 +47,7 @@ class VectorStoreService:
 
         if qdrant_settings.path:
             abs_path = os.path.abspath(qdrant_settings.path)
-            logger.info("Opening Qdrant at: %s", abs_path)
+            print(f"[DIAG] Opening Qdrant at: {abs_path}", flush=True)
             self.client = QdrantClient(path=abs_path)
         elif qdrant_settings.mode == "memory":
             self.client = QdrantClient(location=":memory:")
@@ -65,7 +65,7 @@ class VectorStoreService:
         # Log collection stats at startup
         for col_info in self.client.get_collections().collections:
             info = self.client.get_collection(col_info.name)
-            logger.info("Collection '%s': %d points", col_info.name, info.points_count)
+            print(f"[DIAG] Collection '{col_info.name}': {info.points_count} points", flush=True)
 
     def _ensure_collection(self, collection_name: str) -> None:
         """Create collection with dense + sparse named vectors if not exists."""
@@ -260,13 +260,10 @@ class VectorStoreService:
 
         try:
             # Embed query
-            col_info = self.client.get_collection(col)
-            logger.info(
-                "query_hybrid: collection=%s points=%d query=%s",
-                col, col_info.points_count, query_text[:80],
-            )
+            col_points = self.client.get_collection(col).points_count
+            print(f"[DIAG] query_hybrid: col={col} points={col_points} query={query_text[:80]}", flush=True)
             dense_vec = (await self._embed_dense([query_text]))[0]
-            logger.info("query_hybrid: dense_vec len=%d, first_5=%s", len(dense_vec), dense_vec[:5])
+            print(f"[DIAG] dense_vec: len={len(dense_vec)}", flush=True)
             sparse_vec = self._build_sparse(query_text, col)
 
             # Build session filter for per-user collections (not shared ones)
@@ -344,7 +341,7 @@ class VectorStoreService:
                 operation="hybrid_query",
                 service="qdrant",
                 latency_ms=latency,
-                request_payload={"query": query_text[:200], "top_k": top_k, "collection": col},
+                request_payload={"query": query_text[:200], "top_k": top_k, "collection": col, "col_points": col_points},
                 response_payload={"num_results": len(results)},
                 error=error_str,
                 session_id=session_id,
