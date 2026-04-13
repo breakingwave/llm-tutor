@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 from tavily import TavilyClient
@@ -35,7 +36,8 @@ class SearchService:
         results = []
 
         try:
-            response = self.client.search(
+            response = await asyncio.to_thread(
+                self.client.search,
                 query=query,
                 search_depth=self.settings.tavily_search_depth,
                 max_results=max_results,
