@@ -136,11 +136,15 @@ class Settings(BaseModel):
 
 def _load_yaml(filename: str) -> dict:
     path = Path(filename)
-    if not path.is_absolute():
-        path = CONFIG_DIR / filename
-    if path.exists():
-        with open(path) as f:
-            return yaml.safe_load(f) or {}
+    if path.is_absolute():
+        candidates = [path]
+    else:
+        # Try as-is (relative to cwd) first, then relative to CONFIG_DIR
+        candidates = [path, CONFIG_DIR / filename, CONFIG_DIR / path.name]
+    for candidate in candidates:
+        if candidate.exists():
+            with open(candidate) as f:
+                return yaml.safe_load(f) or {}
     return {}
 
 
