@@ -194,15 +194,66 @@ class OpenStaxChunkingStrategy(ChunkingStrategy):
 
     def _trim_before_heading(self, text: str, title: str) -> str:
         matches = self._find_heading_matches(text, title)
-        if not matches:
-            return text
-        return text[matches[-1].start() :].strip()
+        if matches:
+            return text[matches[-1].start() :].strip()
+        start = self._fallback_heading_start(text, title)
+        if start is not None:
+            return text[start:].strip()
+        return text
 
     def _trim_after_heading(self, text: str, title: str) -> str:
         matches = self._find_heading_matches(text, title)
-        if not matches:
-            return text
-        return text[: matches[0].start()].strip()
+        if matches:
+            return text[: matches[0].start()].strip()
+        start = self._fallback_heading_start(text, title)
+        if start is not None:
+            return text[:start].strip()
+        return text
+
+    def _fallback_heading_start(self, text: str, title: str) -> int | None:
+        """When the ToC title string is not found verbatim in PDF text (hyphenation, fonts, etc.),
+        anchor on OpenStax-style 'N.N …' subsection headings or 'Introduction'."""
+        compact = " ".join(title.split())
+        if not compact:
+            return None
+
+        mnum = re.match(r"^(\d+(?:\.\d+)+)\s+(.+)$", compact)
+        if mnum:
+            num, remainder = mnum.group(1), mnum.group(2).strip()
+            rem = " ".join(remainder.split())
+            if rem:
+                rem_pat = re.escape(rem).replace(r"\ ", r"\s+")
+                pat = re.compile(
+                    r"\b" + re.escape(num) + r"\s+" + rem_pat,
+                    re.IGNORECASE | re.DOTALL,
+                )
+                found = list(pat.finditer(text))
+                if found:
+                    return found[0].start()
+            first_word = rem.split()[0] if rem else ""
+            if first_word:
+                pat2 = re.compile(
+                    r"\b" + re.escape(num) + r"\s+" + re.escape(first_word) + r"\b",
+                    re.IGNORECASE,
+                )
+                found2 = list(pat2.finditer(text))
+                if found2:
+                    return found2[0].start()
+            pat3 = re.compile(
+                r"(?m)^\s*" + re.escape(num) + r"\s+",
+            )
+            found3 = list(pat3.finditer(text))
+            if found3:
+                return found3[0].start()
+
+        if compact.lower() == "introduction":
+            pat4 = re.compile(
+                r"(?im)(?:^|\n\n)\s*introduction\s*(?=\n|$)",
+            )
+            m4 = pat4.search(text)
+            if m4:
+                return m4.start()
+        return None
 
     def _find_heading_matches(self, text: str, title: str) -> list[re.Match[str]]:
         compact_title = " ".join(title.split())
