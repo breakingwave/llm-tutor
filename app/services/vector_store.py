@@ -47,7 +47,6 @@ class VectorStoreService:
 
         if qdrant_settings.path:
             abs_path = os.path.abspath(qdrant_settings.path)
-            print(f"[DIAG] Opening Qdrant at: {abs_path}", flush=True)
             self.client = QdrantClient(path=abs_path)
         elif qdrant_settings.mode == "memory":
             self.client = QdrantClient(location=":memory:")
@@ -61,11 +60,6 @@ class VectorStoreService:
         self._bm25: dict[str, dict] = {}
 
         self._ensure_collection(self.settings.collection_name)
-
-        # Log collection stats at startup
-        for col_info in self.client.get_collections().collections:
-            info = self.client.get_collection(col_info.name)
-            print(f"[DIAG] Collection '{col_info.name}': {info.points_count} points", flush=True)
 
     def _ensure_collection(self, collection_name: str) -> None:
         """Create collection with dense + sparse named vectors if not exists."""
@@ -252,19 +246,23 @@ class VectorStoreService:
         session_id: str | None = None,
         collection_name: str | None = None,
     ) -> list[dict]:
-        """Hybrid dense + sparse search with RRF fusion."""
+        """Dense+sparse hybrid (RRF) when similarity_threshold is unset; else dense cosine with threshold + top_k.
+
+        RRF scores are not comparable to cosine similarity, so a configured threshold uses dense search only
+        (Qdrant score_threshold on the dense vector, limit=top_k).
+        """
         col = self._resolve_collection(collection_name)
         start = time.perf_counter()
         error_str = None
         results = []
+        used_dense_threshold = False
+        similarity_threshold = self.settings.similarity_threshold
+        col_points = 0
 
         try:
             # Embed query
             col_points = self.client.get_collection(col).points_count
-            print(f"[DIAG] query_hybrid: col={col} points={col_points} query={query_text[:80]}", flush=True)
             dense_vec = (await self._embed_dense([query_text]))[0]
-            print(f"[DIAG] dense_vec: len={len(dense_vec)}", flush=True)
-            sparse_vec = self._build_sparse(query_text, col)
 
             # Build session filter for per-user collections (not shared ones)
             query_filter = None
@@ -278,45 +276,58 @@ class VectorStoreService:
                     ],
                 )
 
-            # Build prefetch list — skip sparse when BM25 state is empty
-            # (happens after server restart since BM25 vocab is in-memory only)
-            prefetches = [
-                models.Prefetch(
+            if similarity_threshold is not None:
+                used_dense_threshold = True
+                response = self.client.query_points(
+                    collection_name=col,
                     query=dense_vec,
                     using=DENSE_VECTOR_NAME,
-                    limit=top_k * 2,
-                    filter=query_filter,
-                ),
-            ]
-            if sparse_vec.indices:
-                prefetches.append(
+                    limit=top_k,
+                    score_threshold=similarity_threshold,
+                    query_filter=query_filter,
+                )
+            else:
+                sparse_vec = self._build_sparse(query_text, col)
+
+                # Build prefetch list — skip sparse when BM25 state is empty
+                # (happens after server restart since BM25 vocab is in-memory only)
+                prefetches = [
                     models.Prefetch(
-                        query=models.SparseVector(
-                            indices=sparse_vec.indices,
-                            values=sparse_vec.values,
-                        ),
-                        using=SPARSE_VECTOR_NAME,
+                        query=dense_vec,
+                        using=DENSE_VECTOR_NAME,
                         limit=top_k * 2,
                         filter=query_filter,
                     ),
-                )
+                ]
+                if sparse_vec.indices:
+                    prefetches.append(
+                        models.Prefetch(
+                            query=models.SparseVector(
+                                indices=sparse_vec.indices,
+                                values=sparse_vec.values,
+                            ),
+                            using=SPARSE_VECTOR_NAME,
+                            limit=top_k * 2,
+                            filter=query_filter,
+                        ),
+                    )
 
-            if len(prefetches) > 1:
-                response = self.client.query_points(
-                    collection_name=col,
-                    prefetch=prefetches,
-                    query=models.FusionQuery(fusion=models.Fusion.RRF),
-                    limit=top_k,
-                )
-            else:
-                # Dense-only search (no fusion needed with single prefetch)
-                response = self.client.query_points(
-                    collection_name=col,
-                    query=dense_vec,
-                    using=DENSE_VECTOR_NAME,
-                    limit=top_k,
-                    query_filter=query_filter,
-                )
+                if len(prefetches) > 1:
+                    response = self.client.query_points(
+                        collection_name=col,
+                        prefetch=prefetches,
+                        query=models.FusionQuery(fusion=models.Fusion.RRF),
+                        limit=top_k,
+                    )
+                else:
+                    # Dense-only search (no fusion needed with single prefetch)
+                    response = self.client.query_points(
+                        collection_name=col,
+                        query=dense_vec,
+                        using=DENSE_VECTOR_NAME,
+                        limit=top_k,
+                        query_filter=query_filter,
+                    )
 
             for point in response.points:
                 payload = point.payload or {}
@@ -341,7 +352,14 @@ class VectorStoreService:
                 operation="hybrid_query",
                 service="qdrant",
                 latency_ms=latency,
-                request_payload={"query": query_text[:200], "top_k": top_k, "collection": col, "col_points": col_points},
+                request_payload={
+                    "query": query_text[:200],
+                    "top_k": top_k,
+                    "collection": col,
+                    "col_points": col_points,
+                    "similarity_threshold": similarity_threshold,
+                    "dense_threshold_path": used_dense_threshold,
+                },
                 response_payload={"num_results": len(results)},
                 error=error_str,
                 session_id=session_id,

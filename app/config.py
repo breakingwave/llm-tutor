@@ -66,6 +66,9 @@ class QdrantSettings(BaseModel):
     port: int = 6333
     collection_name: str = "tutor_materials"
     embedding_dimension: int = 1536
+    # Cosine similarity floor for dense retrieval; None = hybrid RRF + top-k only (no threshold).
+    # Values like 0.7 often yield zero hits: query↔chunk scores for text-embedding-3-small are often ~0.35–0.65.
+    similarity_threshold: float | None = None
 
 
 class GatheringSettings(BaseModel):
@@ -86,7 +89,6 @@ class CurriculumSettings(BaseModel):
 class DialogueSettings(BaseModel):
     max_history_messages: int = 20
     rag_top_k: int = 5
-    rag_similarity_threshold: float = 0.7
 
 
 class LoggingSettings(BaseModel):
